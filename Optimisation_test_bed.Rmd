@@ -1,0 +1,236 @@
+---
+title: "Optimise sets-e"
+author: "Jonathan Bourne"
+date: "24/12/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Sets-e can be pretty slow. and due to the large amount of iterations it goes through this adds up
+
+What can I do the get speed up improvements?
+
+#setup
+Load data. I am going to use provis so I can't load the package version of the function I have to load them direct into the workspace
+```{r}
+packages <- c("tidyverse", "igraph", "igraphdata", "minpack.lm", "ggraph", "profvis", "microbenchmark")
+
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+sapply(packages, library, character.only = TRUE)
+
+list.files(file.path("/home/jonno/Useful_PhD__R_Functions"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+list.files(file.path("/home/jonno/NetworkSpringEmbedding/R"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+list.files(file.path("/home/jonno/Setse_optimisation/Alterantive_functions"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+```
+
+
+I will use the zachery karate club as an example dataset
+```{r}
+data("karate", package="igraphdata")
+
+shortest_list <-shortest_paths(karate, from = 1, to = 34, mode = "all" , weights = get.edge.attribute(karate, "weight"), output = "both")
+
+flow_df <- subgraph.edges(karate, shortest_list$epath[[1]]) %>% as_data_frame() %>% 
+  mutate(routes = 1) %>% #trying to think how this can be generalised
+  group_by(from, to) %>%
+  summarise(routes = sum(routes))
+
+karate_edge_df <- as_data_frame(karate) %>%
+  mutate(temporary_flow = 1) %>%
+  left_join(flow_df) %>%
+  mutate(routes = ifelse(is.na(routes), 0, routes),
+         edge_name = paste(from, to, sep = "_"))
+karate_node_df <- as_data_frame(karate, what = "vertices") %>%
+  select(name, everything()) %>%
+  mutate(force = case_when(
+    name =="Mr Hi" ~1,
+    name == "John A" ~-1,
+    TRUE ~0
+  ))
+
+g <- graph_from_data_frame(karate_edge_df, directed = FALSE, vertices = karate_node_df)  %>%
+        set.edge.attribute(. , "distance", value = 1) %>%
+        set.edge.attribute(., "Area", value = 1) %>%
+        calc_spring_youngs_modulus(., "temporary_flow", "weight", minimum_value = 100, stretch_range = 1000) %>%
+        calc_spring_constant(., E ="E", A = "Area", distance = "distance") 
+
+```
+
+
+
+#profile function
+```{r}
+
+
+force = "force"
+              flow = "routes" 
+              distance = "distance" 
+              capacity = "weight"
+              edge_name = "edge_name"
+              k = "k"
+              tstep = 0.02
+              tol = 10e-14
+              maxIter = 1000
+              mass = 1
+              verbose = FALSE
+
+#going inside the Find_network_balance function
+
+ Prep <- Prepare_data_for_find_network_balance(g, force, flow, distance, mass, edge_name)
+  
+  
+  profvis({    Out <- FindStabilSystem_expanded(
+      NodeStatus = Prep$NodeStatus, 
+      EdgeNode = Prep$A, 
+      kvect = Prep$Link$k, 
+      dvect = pull(Prep$Link,distance), 
+      tstep = tstep, 
+      maxIter = maxIter, 
+      frctmultiplier = 1) 
+  }, interval = 0.006)
+  
+  
+
+  
+    
+    profvis(Find_network_balance(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               maxIter = 1000,
+                                               mass = mass,
+                                               verbose = FALSE))
+    
+    profvis(Find_network_balance2(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               maxIter = 1000,
+                                               mass = mass,
+                                               verbose = FALSE),
+            interval = 0.005)
+    
+  all.equal(test_original_algos$NodeList, test_new_algos$NodeList)
+    
+  test <- test_original_algos$NodeList
+  test2 <- test_new_algos$NodeList
+  
+OriginBlock_complete$results %>%
+  filter(t<20) %>%
+  ggplot(aes(x = t, y = z)) + geom_line()
+```
+
+
+The majority of time is spent in Calc_System_dynamis
+
+```{r}
+ profvis(Calc_System_Dynamics(Prep$NodeStatus, Prep$A,  Prep$Link$k, pull(Prep$Link,distance), tstep, 1))
+
+
+ profvis(microbenchmark(Calc_System_Dynamics(Prep$NodeStatus, Prep$A,  Prep$Link$k, pull(Prep$Link,distance), tstep, 1)), interval = 0.005)
+
+NodeStatus <- Prep$NodeStatus
+NodeStatus2 <- Prep$NodeStatus %>% mutate(Delta_acceleration = 0)
+kvect <- Prep$Link$k
+dvect <- pull(Prep$Link,distance)
+EdgeNode <- Prep$A
+
+
+ microbenchmark(A = Create_Tension_matrix(Prep$A, NodeStatus$z, kvect, dvect),
+                B = Calc_Damping_matrix(Prep$A, NodeStatus$velocity, kvect, NodeStatus$mass))
+```
+
+#tension matrix
+```{r}
+profvis(microbenchmark(Create_Tension_matrix2(Prep$A, NodeStatus$z, kvect, dvect), times = 1000), interval = 0.005 )
+
+microbenchmark(A = Create_Tension_matrix(Prep$A, NodeStatus$z, kvect, dvect),
+                B = Create_Tension_matrix2(Prep$A, NodeStatus$z, kvect, dvect))
+
+all_equal(Create_Tension_matrix(Prep$A, NodeStatus$z, kvect, dvect),
+                Create_Tension_matrix2(Prep$A, NodeStatus$z, kvect, dvect))
+
+test <- (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) / (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) 
+test2 <- abs(EdgeNode)
+all.equal(test, test2)
+
+profvis({for(i in 1:10000){
+t_edge <-t(EdgeNode)
+length_dvect <-  length(dvect)
+diag_dvect <- diag(dvect, nrow =length_dvect) 
+product <- t_edge %*% diag_dvect %*% EdgeNode
+abs_product <- abs(product)
+}}
+
+)
+
+
+test <- (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge)
+test2 <-{ 
+  Adj <- (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge)
+  Adj <-(Adj !=0)*1
+  diag(Adj) <-0
+  
+  }
+  
+test3 <- {  Adj <- (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge) / (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge) 
+  diag(Adj) <-0
+  Adj[!is.finite(Adj)] <-0}
+
+test4 <-  {  Adj <- (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) / (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) 
+  diag(Adj) <-0
+  Adj[!is.finite(Adj)] <-0}
+
+all_equal(test2,  test4)
+
+microbenchmark(A = { 
+  Adj <- (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge)
+  Adj <-(Adj !=0)*1
+  diag(Adj) <-0
+  
+  },
+B = {  Adj <- (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge) / (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge) 
+  diag(Adj) <-0
+  Adj[!is.finite(Adj)] <-0},
+C = {  Adj <- (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) / (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) 
+  diag(Adj) <-0
+  Adj[!is.finite(Adj)] <-0}
+)
+```
+
+
+
+#New version tests
+
+```{r}
+ Prep <- Prepare_data_for_find_network_balance(g, force, flow, distance, mass, edge_name)
+ Prep2 <- Prepare_data_for_find_network_balance2(g, force, flow, distance, mass, edge_name)
+
+ Adjmat <- Prep2$Adjmat
+ kmat <- Prep2$kmat
+dmat <- Prep2$dmat
+NodeStatus <- Prep2$NodeStatus
+ 
+ microbenchmark(A = Calc_System_Dynamics(NodeStatus, Prep$A,  Prep$Link$k, pull(Prep$Link,distance), tstep, 1),
+                B = Calc_System_Dynamics2(Prep2$NodeStatus, Prep2$Adjmat,  Prep2$kmat, Prep2$dmat, tstep, 1),
+                times = 1000)
+
+
+
+```
+
