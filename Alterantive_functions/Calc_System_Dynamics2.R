@@ -14,34 +14,40 @@
 #'
 #' @export
 
-Calc_System_Dynamics2 <- function(NodeStatus, Adjmat, kmat, dmat, tstep = 1, frctmultiplier = 1){
+Calc_System_Dynamics2 <- function(NodeStatus, Adjmat, kmat, dmat, mat_size, tstep = 1, frctmultiplier = 1){
   
-  Tension_vect <- Create_Tension_matrix2(Adjmat, kmat, dmat, NodeStatus$z) %>% rowSums()
-  Friction_vect <- Calc_Damping_matrix2(Adjmat, NodeStatus$velocity, kmat, NodeStatus$mass) %>% rowMeans()
+  #Tension_vect <- .rowSums(Create_Tension_matrix2(Adjmat, kmat, dmat, NodeStatus[,2]), m = mat_size, n = mat_size)
+  #Friction_vect <- .rowMeans(Calc_Damping_matrix2(Adjmat, NodeStatus[,5], kmat, NodeStatus[,3]), m = mat_size, n = mat_size)
   
-  # NodeStatus2 <- NodeStatus %>%
-  #   mutate(z = Distance(z, velocity, acceleration, t0 = t, t1 = t + tstep),
-  #          velocity = velocity(velocity, acceleration, t, t + tstep),
-  #          NetTension =  Tension_vect,
-  #          friction = Friction_vect*frctmultiplier, #velocity*10,
-  #          NetForce = force + NetTension - friction,
-  #          acceleration = NetForce/mass,
-  #          Delta_acceleration = (acceleration-NodeStatus$acceleration)/tstep, #Find change in acceleration, used in early termination
-  #          t = t + tstep)
+  
   
   #This old school method is much faster than using mutate
   NodeStatus2 <- NodeStatus
-  NodeStatus2$z <- Distance(NodeStatus$z, NodeStatus$velocity, NodeStatus$acceleration, t0 = NodeStatus$t, t1 = NodeStatus$t + tstep)
-  NodeStatus2$velocity <- velocity(NodeStatus$velocity, NodeStatus$acceleration, NodeStatus$t, NodeStatus$t + tstep)
-  NodeStatus2$NetTension <- Tension_vect
-  NodeStatus2$friction <- Friction_vect*frctmultiplier
-  NodeStatus2$NetForce <- NodeStatus2$force + NodeStatus2$NetTension - NodeStatus2$friction
-  NodeStatus2$acceleration <- NodeStatus2$NetForce/NodeStatus2$mass
-  NodeStatus2$Delta_acceleration <- (NodeStatus2$acceleration-NodeStatus$acceleration)/tstep
-  NodeStatus2$t <- NodeStatus2$t+tstep
+  NodeStatus2[,2] <- Distance(NodeStatus[,2], NodeStatus[,5], NodeStatus[,8], t0 = NodeStatus[,10], t1 = NodeStatus[,10] + tstep)
+  NodeStatus2[,5] <- velocity(NodeStatus[,5], NodeStatus[,8], NodeStatus[,10], NodeStatus[,10] + tstep)
+  NodeStatus2[,4] <- .rowSums(Create_Tension_matrix2(Adjmat, kmat, dmat, NodeStatus[,2]), m = mat_size, n = mat_size)
+  NodeStatus2[,6] <- .rowMeans(Calc_Damping_matrix2(Adjmat, NodeStatus[,5], kmat, NodeStatus[,3]), m = mat_size, n = mat_size)*frctmultiplier
+  NodeStatus2[,7] <- NodeStatus2[,1] + NodeStatus2[,4] - NodeStatus2[,6]
+  NodeStatus2[,8] <- NodeStatus2[,7]/NodeStatus2[,3]
+  NodeStatus2[,9] <- (NodeStatus2[,8]-NodeStatus[,8])/tstep
+  NodeStatus2[,10] <- NodeStatus[,10]+tstep
+  
+    # Tension_vect <- rowSums(Create_Tension_matrix2(Adjmat, kmat, dmat, NodeStatus$z))
+  # Friction_vect <- rowMeans(Calc_Damping_matrix2(Adjmat, NodeStatus$velocity, kmat, NodeStatus$mass))
+  # 
+  # #This old school method is much faster than using mutate
+  # NodeStatus2 <- NodeStatus
+  # NodeStatus2$z <- Distance(NodeStatus$z, NodeStatus$velocity, NodeStatus$acceleration, t0 = NodeStatus$t, t1 = NodeStatus$t + tstep)
+  # NodeStatus2$velocity <- velocity(NodeStatus$velocity, NodeStatus$acceleration, NodeStatus$t, NodeStatus$t + tstep)
+  # NodeStatus2$NetTension <- Tension_vect
+  # NodeStatus2$friction <- Friction_vect*frctmultiplier
+  # NodeStatus2$NetForce <- NodeStatus2$force + NodeStatus2$NetTension - NodeStatus2$friction
+  # NodeStatus2$acceleration <- NodeStatus2$NetForce/NodeStatus2$mass
+  # NodeStatus2$Delta_acceleration <- (NodeStatus2$acceleration-NodeStatus$acceleration)/tstep
+  # NodeStatus2$t <- NodeStatus2$t+tstep
 
   
-  paste("acceleration", sum(abs(NodeStatus2$acceleration)), "velocity", sum(abs(NodeStatus2$velocity)))
+  #paste("acceleration", sum(abs(NodeStatus2$acceleration)), "velocity", sum(abs(NodeStatus2$velocity)))
   
   return(NodeStatus2)
   

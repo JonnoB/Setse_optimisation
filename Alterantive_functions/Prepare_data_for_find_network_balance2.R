@@ -54,6 +54,7 @@ Prepare_data_for_find_network_balance2 <-function(g, force, flow, distance, mass
       friction = 0,
       NetForce = force + NetTension - friction,
       acceleration = NetForce/mass,
+      Delta_acceleration = 0,
       t = 0) %>%
     arrange(node)
   

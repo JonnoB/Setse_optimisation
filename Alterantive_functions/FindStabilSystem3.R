@@ -17,10 +17,21 @@
 #' @export
 
 
-FindStabilSystem2 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat, capacity, edge_name = edge_name, 
+FindStabilSystem3 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat, capacity, edge_name = edge_name, 
                              tstep, maxIter = 1000, frctmultiplier = 1, 
                               tol = 1e-10, verbose = TRUE){
   #Runs the physics model to find the convergence of the system.
+  non_empty_matrix <- which(Adjmat!=0, arr.ind = T) %>%
+    tibble(names = rownames(.), rows = .[,1], 
+           cols = .[,2],
+           index = rows+ (cols-1)*ncol(Adjmat),
+           t_index = cols + (rows-1)*ncol(Adjmat)) %>% {.[,3:6]} %>%
+    as.matrix()
+  
+  kvect <- kmat[non_empty_matrix[,3]]
+  dvect <- dmat[non_empty_matrix[,3]]
+  
+  ten_mat <- damp_mat <- Adjmat*0
   
   #friction_stop fricton is a stopping condition. defualts to FALSE. 
   NodeList <- as.matrix(NodeStatus[,-1])
@@ -64,7 +75,16 @@ FindStabilSystem2 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat,
   while((Iter <= maxIter) & !system_stable ){
 
     # print(NodeList[[n]])
-    temp <- Calc_System_Dynamics2(NodeList, Adjmat, kmat, dmat, tstep, mat_size = m[1], frctmultiplier)
+    
+    
+    temp <- Calc_System_Dynamics3(NodeList, 
+                                  ten_mat = ten_mat, 
+                                  damp_mat = damp_mat, 
+                                  kvect, dvect,  
+                                  mat_size = m[1], 
+                                  tstep, 
+                                  non_empty_matrix = non_empty_matrix, 
+                                  frctmultiplier)
     
 
     

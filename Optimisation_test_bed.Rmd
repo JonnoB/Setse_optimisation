@@ -28,6 +28,8 @@ list.files(file.path("/home/jonno/NetworkSpringEmbedding/R"), pattern = ".R", fu
 
 list.files(file.path("/home/jonno/Setse_optimisation/Alterantive_functions"), pattern = ".R", full.names = T) %>%
   walk(~source(.x))
+
+library(PowerGridNetworking)
 ```
 
 
@@ -63,7 +65,58 @@ g <- graph_from_data_frame(karate_edge_df, directed = FALSE, vertices = karate_n
 
 ```
 
+#IEEE graph set
+```{r}
 
+g2 <- readRDS(file.path("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs", "IEEE_300_igraph.rds" ))
+
+g3 <- g2 %>% Proportional_Load(., 2, PowerFlow = "power_flow", Link.Limit = "edge_capacity")
+
+      current_graph  <- g3 %>%
+        set.edge.attribute(. , "distance", value = 1) %>%
+        set.edge.attribute(., "Area", value = 1) %>%
+        calc_spring_youngs_modulus(., "power_flow", "edge_capacity", minimum_value = 100, stretch_range = 1000) %>%
+        calc_spring_constant(., E ="E", A = "Area", distance = "distance") %>%
+        normalise_dc_load(.,  
+                           generation = "generation", 
+                           demand  = "demand",
+                           net_generation = "net_generation", 
+                           capacity = "edge_capacity",
+                           edge_name = "edge_name", 
+                           node_name = "name",
+                           power_flow = "power_flow")
+      g <- current_graph
+      
+            List_of_BiConComps <- create_balanced_blocks(current_graph, 
+                                                   force = "net_generation", 
+                                                   flow = "power_flow")
+      
+      #find the largest component and use that as the origin block
+      giant_componant <-List_of_BiConComps %>% map_dbl(~vcount(.x)) %>% which.max()
+      
+      print("Giant component found")
+      
+      #use the largest block to set the simulation parameters k and m.
+      #k needs to be sufficiently stretched to allow enough topology variation. otherwise all that happens is a 
+      #surface angled in the direct of net power flow. Which is interesting but not that interesting
+      OriginBlock_complete <- Find_network_balance2(g = current_graph,
+                                                   force ="net_generation",
+                                                   flow = "power_flow",
+                                                   distance = "distance",
+                                                   capacity = "edge_capacity",
+                                                   edge_name = "edge_name",
+                                                   tstep = tstep/10,
+                                                   tol = tol,
+                                                   maxIter = maxIter*10,
+                                                   mass = mass,
+                                                   verbose = FALSE)
+      
+      test <- OriginBlock_complete$results
+      test2 <- OriginBlock_complete$NodeList
+
+
+      plot(test)
+```
 
 #profile function
 ```{r}
@@ -84,20 +137,74 @@ force = "force"
 #going inside the Find_network_balance function
 
  Prep <- Prepare_data_for_find_network_balance(g, force, flow, distance, mass, edge_name)
-  
-  
-  profvis({    Out <- FindStabilSystem_expanded(
-      NodeStatus = Prep$NodeStatus, 
-      EdgeNode = Prep$A, 
-      kvect = Prep$Link$k, 
-      dvect = pull(Prep$Link,distance), 
-      tstep = tstep, 
-      maxIter = maxIter, 
-      frctmultiplier = 1) 
-  }, interval = 0.006)
-  
-  
+ 
+ Prep <- Prepare_data_for_find_network_balance2(g, force, flow, distance, mass, edge_name)  
 
+ NodeStatus <- Prep$NodeStatus
+ Link <- Prep$Link
+ Adjmat <- Prep$Adjmat
+ kmat <- Prep$kmat
+ dmat <- Prep$dmat
+frctmultiplier <-1
+
+time_test_orig_start <- system.time( test_original_algos<-  Find_network_balance(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               maxIter = 4e4,
+                                               mass = mass,
+                                               verbose = FALSE))
+ test_original_algos <-  Find_network_balance(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               maxIter = maxIter,
+                                               mass = mass,
+                                               verbose = FALSE)
+
+ time_test_new_start <- system.time(  test_new_algos<-  Find_network_balance2(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               maxIter = 4e4,
+                                               mass = mass,
+                                               verbose = FALSE))
+ 
+  test_new_algos_1 <-  Find_network_balance2(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               maxIter = maxIter,
+                                               mass = mass,
+                                               verbose = FALSE)
+  
+    test_new_algos_2 <-  Find_network_balance3(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               maxIter = maxIter,
+                                               mass = mass,
+                                               verbose = FALSE)
   
     
     profvis(Find_network_balance(g = g,
@@ -112,7 +219,7 @@ force = "force"
                                                mass = mass,
                                                verbose = FALSE))
     
-    profvis(Find_network_balance2(g = g,
+    profvis(Find_network_balance3(g = g,
                                                force =force,
                                                flow = flow,
                                                distance = distance,
@@ -125,14 +232,42 @@ force = "force"
                                                verbose = FALSE),
             interval = 0.005)
     
-  all.equal(test_original_algos$NodeList, test_new_algos$NodeList)
+  all_equal(test_original_algos$NodeList, test_new_algos_1$NodeList)
+  all_equal(test_new_algos_1$NodeList, test_new_algos_2$NodeList)
     
-  test <- test_original_algos$NodeList
-  test2 <- test_new_algos$NodeList
+  new_NodeList <- test_new_algos$NodeList
+  original_NodeList <- test_original_algos$NodeList
   
-OriginBlock_complete$results %>%
-  filter(t<20) %>%
-  ggplot(aes(x = t, y = z)) + geom_line()
+  test <- test_original_algos$results
+  test2 <- test_new_algos$results
+all_equal(test, test2)
+  
+
+#The results file for the original and new algos are different on max absolute acceleration. I don't know why
+#everything else is the same
+
+bind_rows(test_new_algos$results %>% mutate(type = "new"), 
+          test_original_algos$results %>% mutate(type = "original")) %>% as_tibble() %>%
+#  filter(t<20) %>%
+  ggplot(aes(x = t, y = acceleration, colour = type)) + geom_line()
+
+40*31000/60/24/30
+
+(5/6)*31000/60/24
+
+
+x <- data.frame(matrix(runif(100 * 1e4), ncol = 100))
+medians <- vapply(x, median, numeric(1))
+
+for(i in seq_along(medians)) {
+  x[, i] <- x[, i] - medians[i]
+}
+
+for(i in 1:5) {
+  x[, i] <- x[, i] - medians[i]
+  print(c(address(x), refs(x)))
+}
+
 ```
 
 
@@ -155,82 +290,47 @@ EdgeNode <- Prep$A
                 B = Calc_Damping_matrix(Prep$A, NodeStatus$velocity, kvect, NodeStatus$mass))
 ```
 
-#tension matrix
+
+#test the time step
 ```{r}
-profvis(microbenchmark(Create_Tension_matrix2(Prep$A, NodeStatus$z, kvect, dvect), times = 1000), interval = 0.005 )
-
-microbenchmark(A = Create_Tension_matrix(Prep$A, NodeStatus$z, kvect, dvect),
-                B = Create_Tension_matrix2(Prep$A, NodeStatus$z, kvect, dvect))
-
-all_equal(Create_Tension_matrix(Prep$A, NodeStatus$z, kvect, dvect),
-                Create_Tension_matrix2(Prep$A, NodeStatus$z, kvect, dvect))
-
-test <- (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) / (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) 
-test2 <- abs(EdgeNode)
-all.equal(test, test2)
-
-profvis({for(i in 1:10000){
-t_edge <-t(EdgeNode)
-length_dvect <-  length(dvect)
-diag_dvect <- diag(dvect, nrow =length_dvect) 
-product <- t_edge %*% diag_dvect %*% EdgeNode
-abs_product <- abs(product)
-}}
-
-)
-
-
-test <- (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge)
-test2 <-{ 
-  Adj <- (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge)
-  Adj <-(Adj !=0)*1
-  diag(Adj) <-0
-  
-  }
-  
-test3 <- {  Adj <- (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge) / (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge) 
-  diag(Adj) <-0
-  Adj[!is.finite(Adj)] <-0}
-
-test4 <-  {  Adj <- (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) / (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) 
-  diag(Adj) <-0
-  Adj[!is.finite(Adj)] <-0}
-
-all_equal(test2,  test4)
-
-microbenchmark(A = { 
-  Adj <- (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge)
-  Adj <-(Adj !=0)*1
-  diag(Adj) <-0
-  
-  },
-B = {  Adj <- (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge) / (t_edge %*% diag(1, nrow = nrow(abs_edge)) %*% abs_edge) 
-  diag(Adj) <-0
-  Adj[!is.finite(Adj)] <-0},
-C = {  Adj <- (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) / (t(EdgeNode) %*% diag(1, nrow = nrow(EdgeNode)) %*% EdgeNode) 
-  diag(Adj) <-0
-  Adj[!is.finite(Adj)] <-0}
-)
-```
 
 
 
-#New version tests
+tstep_test <- {seq(0.017, 0.02, by = 0.001  )} %>% #0.02%>%# 
+  map_df(~{
+    print(.x)
+   res <- Find_network_balance2(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = .x,
+                                               tol = tol,
+                                               maxIter = 10000,
+                                               mass = mass,
+                                               verbose = FALSE)
+    
+ Out <-  res$results %>% mutate(tstep = .x)
+ return(Out) 
+ }) %>%
+  group_by(tstep) %>%
+  mutate(t_norm = t/max(t, na.rm = T)) %>%
+  ungroup %>%
+  filter(complete.cases(.))
 
-```{r}
- Prep <- Prepare_data_for_find_network_balance(g, force, flow, distance, mass, edge_name)
- Prep2 <- Prepare_data_for_find_network_balance2(g, force, flow, distance, mass, edge_name)
-
- Adjmat <- Prep2$Adjmat
- kmat <- Prep2$kmat
-dmat <- Prep2$dmat
-NodeStatus <- Prep2$NodeStatus
- 
- microbenchmark(A = Calc_System_Dynamics(NodeStatus, Prep$A,  Prep$Link$k, pull(Prep$Link,distance), tstep, 1),
-                B = Calc_System_Dynamics2(Prep2$NodeStatus, Prep2$Adjmat,  Prep2$kmat, Prep2$dmat, tstep, 1),
-                times = 1000)
+tstep_test %>%
+#filter(tstep <0.02) %>%
+ # filter(t_norm>0.75, t_norm<0.80) %>%
+ggplot(aes(x = t_norm, y =net_force+ kinetic_force, colour = as.factor(tstep))) + geom_line()
 
 
+tstep_test %>%
+#filter(tstep <0.02) %>%
+ggplot(aes(x = log10(net_force), y = log10(kinetic_force), colour = as.factor(tstep))) + geom_point()
 
+
+test <- tstep_test %>%
+  filter(tstep == 0.02)
 ```
 

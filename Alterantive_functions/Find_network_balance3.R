@@ -22,7 +22,7 @@
 #' @seealso \code{\link{Create_stabilised_blocks}} \code{\link{create_balanced_blocks}}
 #' @export
 
-Find_network_balance2 <- function(g, 
+Find_network_balance3 <- function(g, 
                                  force ="net_generation", 
                                  flow = "power_flow", 
                                  capacity = "capacity", 
@@ -74,7 +74,7 @@ Find_network_balance2 <- function(g,
     #Solves using the iterative method.
   } else{
     
-    Out <- FindStabilSystem2(
+    Out <- FindStabilSystem3(
       g = g,
       distance = distance,
       NodeStatus = Prep$NodeStatus, 
