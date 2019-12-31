@@ -29,6 +29,9 @@ list.files(file.path("/home/jonno/NetworkSpringEmbedding/R"), pattern = ".R", fu
 list.files(file.path("/home/jonno/Setse_optimisation/Alterantive_functions"), pattern = ".R", full.names = T) %>%
   walk(~source(.x))
 
+list.files(file.path("/home/jonno/Setse_optimisation/Original_functions"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
 library(PowerGridNetworking)
 ```
 
@@ -68,14 +71,14 @@ g <- graph_from_data_frame(karate_edge_df, directed = FALSE, vertices = karate_n
 #IEEE graph set
 ```{r}
 
-g2 <- readRDS(file.path("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs", "IEEE_300_igraph.rds" ))
+g2 <- readRDS(file.path("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs", "IEEE_118_igraph.rds" ))
 
-g3 <- g2 %>% Proportional_Load(., 2, PowerFlow = "power_flow", Link.Limit = "edge_capacity")
+g3 <- g2 %>% Proportional_Load(., 1, PowerFlow = "power_flow", Link.Limit = "edge_capacity")
 
       current_graph  <- g3 %>%
         set.edge.attribute(. , "distance", value = 1) %>%
         set.edge.attribute(., "Area", value = 1) %>%
-        calc_spring_youngs_modulus(., "power_flow", "edge_capacity", minimum_value = 100, stretch_range = 1000) %>%
+        calc_spring_youngs_modulus(., "power_flow", "edge_capacity", minimum_value = 10000, stretch_range = 10000) %>%
         calc_spring_constant(., E ="E", A = "Area", distance = "distance") %>%
         normalise_dc_load(.,  
                            generation = "generation", 
@@ -87,52 +90,35 @@ g3 <- g2 %>% Proportional_Load(., 2, PowerFlow = "power_flow", Link.Limit = "edg
                            power_flow = "power_flow")
       g <- current_graph
       
-            List_of_BiConComps <- create_balanced_blocks(current_graph, 
-                                                   force = "net_generation", 
-                                                   flow = "power_flow")
-      
-      #find the largest component and use that as the origin block
-      giant_componant <-List_of_BiConComps %>% map_dbl(~vcount(.x)) %>% which.max()
-      
-      print("Giant component found")
-      
-      #use the largest block to set the simulation parameters k and m.
-      #k needs to be sufficiently stretched to allow enough topology variation. otherwise all that happens is a 
-      #surface angled in the direct of net power flow. Which is interesting but not that interesting
-      OriginBlock_complete <- Find_network_balance2(g = current_graph,
-                                                   force ="net_generation",
-                                                   flow = "power_flow",
-                                                   distance = "distance",
-                                                   capacity = "edge_capacity",
-                                                   edge_name = "edge_name",
-                                                   tstep = tstep/10,
-                                                   tol = tol,
-                                                   maxIter = maxIter*10,
-                                                   mass = mass,
-                                                   verbose = FALSE)
-      
-      test <- OriginBlock_complete$results
-      test2 <- OriginBlock_complete$NodeList
-
-
-      plot(test)
 ```
 
 #profile function
 ```{r}
 
-
+#karate
 force = "force"
-              flow = "routes" 
-              distance = "distance" 
-              capacity = "weight"
-              edge_name = "edge_name"
-              k = "k"
-              tstep = 0.02
-              tol = 10e-14
-              maxIter = 1000
-              mass = 1
-              verbose = FALSE
+flow = "routes" 
+distance = "distance" 
+capacity = "weight"
+edge_name = "edge_name"
+k = "k"
+tstep = 0.2
+tol = 10e-14
+maxIter = 1000
+mass = 1
+verbose = FALSE
+
+#IEEE      
+force ="net_generation"
+flow = "power_flow"
+distance = "distance"
+capacity = "edge_capacity"
+edge_name = "edge_name"
+tstep = 0.02
+tol = 0
+maxIter = 40000
+mass = 1
+verbose = FALSE
 
 #going inside the Find_network_balance function
 
@@ -204,7 +190,9 @@ time_test_orig_start <- system.time( test_original_algos<-  Find_network_balance
                                                tol = tol,
                                                maxIter = maxIter,
                                                mass = mass,
-                                               verbose = FALSE)
+                                               verbose = FALSE,
+                                               sparse = FALSE,
+                                               frctmultiplier = 0.5)
   
     
     profvis(Find_network_balance(g = g,
@@ -219,7 +207,7 @@ time_test_orig_start <- system.time( test_original_algos<-  Find_network_balance
                                                mass = mass,
                                                verbose = FALSE))
     
-    profvis(Find_network_balance3(g = g,
+    profvis(expr =       Find_network_balance3(g = g,
                                                force =force,
                                                flow = flow,
                                                distance = distance,
@@ -227,9 +215,10 @@ time_test_orig_start <- system.time( test_original_algos<-  Find_network_balance
                                                edge_name = edge_name,
                                                tstep = tstep,
                                                tol = tol,
-                                               maxIter = 1000,
+                                               maxIter = 40000,
                                                mass = mass,
-                                               verbose = FALSE),
+                                               verbose = FALSE,
+                                               sparse = F),
             interval = 0.005)
     
   all_equal(test_original_algos$NodeList, test_new_algos_1$NodeList)
@@ -238,9 +227,9 @@ time_test_orig_start <- system.time( test_original_algos<-  Find_network_balance
   new_NodeList <- test_new_algos$NodeList
   original_NodeList <- test_original_algos$NodeList
   
-  test <- test_original_algos$results
-  test2 <- test_new_algos$results
-all_equal(test, test2)
+  test <- test_new_algos_1$NodeList
+  test2 <- test_new_algos_2$NodeList
+all.equal(test, test2)
   
 
 #The results file for the original and new algos are different on max absolute acceleration. I don't know why
@@ -255,18 +244,9 @@ bind_rows(test_new_algos$results %>% mutate(type = "new"),
 
 (5/6)*31000/60/24
 
-
-x <- data.frame(matrix(runif(100 * 1e4), ncol = 100))
-medians <- vapply(x, median, numeric(1))
-
-for(i in seq_along(medians)) {
-  x[, i] <- x[, i] - medians[i]
-}
-
-for(i in 1:5) {
-  x[, i] <- x[, i] - medians[i]
-  print(c(address(x), refs(x)))
-}
+test_new_algos_2$network_dynamics %>%
+ # filter(t>400, t<401) %>%
+  ggplot(aes(x = t, y = log10(force_energy)))+ geom_line()
 
 ```
 
@@ -296,10 +276,10 @@ EdgeNode <- Prep$A
 
 
 
-tstep_test <- {seq(0.017, 0.02, by = 0.001  )} %>% #0.02%>%# 
+tstep_test <- {seq(0.02, 0.045, by = 0.005  )} %>% #0.02%>%# 
   map_df(~{
     print(.x)
-   res <- Find_network_balance2(g = g,
+   res <- Find_network_balance(g = g,
                                                force =force,
                                                flow = flow,
                                                distance = distance,
@@ -307,11 +287,11 @@ tstep_test <- {seq(0.017, 0.02, by = 0.001  )} %>% #0.02%>%#
                                                edge_name = edge_name,
                                                tstep = .x,
                                                tol = tol,
-                                               maxIter = 10000,
+                                               maxIter = 1000,
                                                mass = mass,
                                                verbose = FALSE)
     
- Out <-  res$results %>% mutate(tstep = .x)
+ Out <-  res$network_dynamics %>% mutate(tstep = .x)
  return(Out) 
  }) %>%
   group_by(tstep) %>%
@@ -321,16 +301,371 @@ tstep_test <- {seq(0.017, 0.02, by = 0.001  )} %>% #0.02%>%#
 
 tstep_test %>%
 #filter(tstep <0.02) %>%
- # filter(t_norm>0.75, t_norm<0.80) %>%
-ggplot(aes(x = t_norm, y =net_force+ kinetic_force, colour = as.factor(tstep))) + geom_line()
+  filter(
+    t_norm>0.0, t_norm<1.0, 
+    #     strain>0.0888
+    ) %>%
+ggplot(aes(x = t_norm, y =strain, colour = as.factor(tstep))) + geom_line()
 
 
 tstep_test %>%
-#filter(tstep <0.02) %>%
-ggplot(aes(x = log10(net_force), y = log10(kinetic_force), colour = as.factor(tstep))) + geom_point()
+filter(tstep ==0.045) %>%
+ggplot(aes(x = log10(force_energy), y = log10(kinetic_energy), colour = as.factor(tstep))) + geom_point()
 
+tstep_test %>%
+filter(tstep ==0.045) %>%
+ggplot(aes(x = log10(force_energy), y = log10(kinetic_energy), colour = t_norm)) + geom_point() +scale_colour_viridis_c()
+
+tstep_test %>%
+filter(tstep ==0.045) %>%
+ggplot(aes(x = (t_norm), y =log10(strain), colour = t_norm)) + geom_line() +scale_colour_viridis_c()
 
 test <- tstep_test %>%
   filter(tstep == 0.02)
+
+
+test_number_of_iters <- Find_network_balance3(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = 0.02,
+                                               tol = tol,
+                                               maxIter = 40000,
+                                               mass = mass,
+                                               verbose = FALSE)
+
+test_number_of_iters$results %>%
+  filter(t>20000)
+
+tstep_test_val <- 0.02
+test_dat <- calculate_SET2(g, 
+                           force =force,
+                           flow = flow,
+                           distance = distance,
+                           capacity = capacity,
+                           edge_name = edge_name,
+                           k = "k",
+                           tstep = tstep_test_val,
+                           tol,
+                           maxIter = 1000,
+                           mass = 1,
+                           verbose = FALSE)
+
+test_new_package <- SETS_embedding(g, 
+                           force =force,
+                           flow = flow,
+                           distance = distance,
+                           capacity = capacity,
+                           edge_name = edge_name,
+                           k = "k",
+                           tstep = tstep_test_val,
+                           tol,
+                           maxIter = 1000,
+                           mass = 1,
+                           verbose = FALSE)
+
+
+all_equal(test_dat$network_dynamics, test_new_package$network_dynamics)
+
+test_dat_inf <- test_dat$edge_embeddings
+
+test <- bind_rows(test_dat$network_dynamics %>% mutate(type = "articulation", 
+                                                       t_norm = t/tstep_test_val) ,
+                  test_number_of_iters$network_dynamics %>% mutate(type = "whole network",
+                                                                   t_norm = t/0.02))
+
+test%>%
+  filter(t_norm > 39000) %>%
+  ggplot(aes(x = t_norm, y = log10(force_energy), colour = type))+ geom_line()
+
+
+test%>%
+  ggplot(aes(x = t, y = value, colour = name))+ geom_line()
+  
+  
+test <-  test_dat$node_embeddings %>% left_join(test_number_of_iters$NodeStatus %>% select(node, z2 = z)) %>%
+    mutate(dz = (z-mean(z))-(z2- mean(z2)),
+           dz_perc = dz/z) 
+ggplot(test, aes(x = dz)) + geom_density()
+
+bind_rows(test_dat$node_embeddings %>% mutate(type = "articulation"), test_number_of_iters$NodeStatus %>%
+            mutate(type = "whole network")) %>%
+  group_by(type) %>%
+  mutate(z_norm = z - mean(z))%>%
+  ggplot(aes( x= percent_rank(z_norm), y = z_norm, colour = type)) + geom_point()
+
+
+```
+
+
+#Comparing old and new Algos
+This is to compare 40k iterations using the original algos and the new ones. I want to see what the time and stability difference is.
+
+What I see is that the original algo wasn't run long enough to converge properly. This is probably partly due to the error in the distance formula. As a result the new algo is several orders of magnitude more stable than the previous algo, as well as being about 1.5 orders of magnitude faster.
+
+I can half the number of iterations and still be 1000 times more stable
+
+```{r}
+
+iters_comp <- 40000
+
+
+#Overwrite the functions with the original functions
+list.files(file.path("/home/jonno/Setse_optimisation/Original_functions"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+original_time <- system.time(original_algo <- calculate_SET(g, force,
+                                                            flow,
+                                                            distance,
+                                                            capacity,
+                                                            k = "k",
+                                                            tstep = 0.005,
+                                                            tol = 10e-14,
+                                                            maxIter = iters_comp))
+
+#Overwrite with new functions
+list.files(file.path("/home/jonno/NetworkSpringEmbedding/R"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+
+new_time <-system.time( new_algo <- FindStabilSystem(
+  g = g,
+  distance = distance,
+  NodeStatus = Prep$NodeStatus, 
+  Adjmat = Prep$Adjmat, 
+  flow = flow,
+  kmat = Prep$kmat, 
+  dmat = Prep$dmat,
+  capacity = capacity,
+  edge_name = edge_name,
+  tstep = 0.02, 
+  maxIter = iters_comp, 
+  frctmultiplier = frctmultiplier, 
+  sparse = FALSE,
+  tol = tol, 
+  verbose = verbose) )
+
+bicomp_time <- system.time(bicomp_algo <- SETS_embedding(g, 
+                                                         force =force,
+                                                         flow = flow,
+                                                         distance = distance,
+                                                         capacity = capacity,
+                                                         edge_name = edge_name,
+                                                         k = "k",
+                                                         tstep = 0.002,
+                                                         tol = 0,
+                                                         maxIter = 40000,
+                                                         mass = 1,
+                                                         verbose = FALSE))
+
+combined_results  <-bind_rows(
+  original_algo$node_embeddings %>% mutate(type = "original"),
+  bicomp_algo$node_embeddings %>% mutate(type = "bicomp"),
+                 new_algo$NodeStatus %>% mutate(type = "new")) %>%
+  mutate(kinetic_energy = 0.5*mass*velocity^2) %>%
+  group_by(type) %>%
+  mutate(z_norm = z-mean(z)) %>%
+  ungroup(z)
+
+
+combined_summary <-combined_results %>%
+  group_by(type) %>%
+  summarise(kinetic_energy = sum(kinetic_energy),
+          force_energy = sum(abs(NetForce + friction))) %>%
+  mutate(relative_energy =(force_energy+kinetic_energy)/2) #the normalised initial energy persecond is 2
+  
+
+combined_summary  %>%
+  ggplot(aes(x = log10(kinetic_energy), y = log10(force_energy), colour = type)) +geom_point()
+
+#They are all eseentially the same
+combined_results %>%
+  #filter(type !="new") %>%
+  ggplot(aes(x = node, y = log10(z_norm-min(z_norm)), colour = type)) +geom_point()
+
+
+
+profvis(SETS_embedding(g, 
+                                                         force =force,
+                                                         flow = flow,
+                                                         distance = distance,
+                                                         capacity = capacity,
+                                                         edge_name = edge_name,
+                                                         k = "k",
+                                                         tstep = 0.0,
+                                                         tol,
+                                                         maxIter = 1000,
+                                                         mass = 1,
+                                                         verbose = FALSE))
+test <-bicomp_algo$node_embeddings %>%
+  mutate(friction_fract = abs(friction)/abs(force +NetTension))
+test <- bicomp_algo$network_dynamics
+test %>%
+  filter(force_energy<5) %>%
+  ggplot(aes(x = t, y = (force_energy+kinetic_energy))) + geom_line()
+
+```
+
+
+#epoch of convergence
+
+
+There may be something in creating epochs.
+However, It is complicated and the stability of the models is very good now anyway so I don't think it is necessary right now to explore.
+The models can be run with a larger timstep and for less iterations. This makes convergence faster on two counts.
+It may be that having some method of automatically choosing the timestep will make convergence more adaptable and provide order of magnitude stability increases.
+
+Mass also influences convergence rate and probability of divergence
+```{r}
+    base_case <- FindStabilSystem(
+      g = g,
+      distance = distance,
+      NodeStatus = Prep$NodeStatus, 
+      Adjmat = Prep$Adjmat, 
+      flow = flow,
+      kmat = Prep$kmat, 
+      dmat = Prep$dmat,
+      capacity = capacity,
+      edge_name = edge_name,
+      tstep = .045, 
+      maxIter = maxIter*11, 
+      frctmultiplier = frctmultiplier, 
+      sparse = FALSE,
+      tol = tol, 
+      verbose = verbose) 
+
+    Start <- FindStabilSystem(
+      g = g,
+      distance = distance,
+      NodeStatus = Prep$NodeStatus, 
+      Adjmat = Prep$Adjmat, 
+      flow = flow,
+      kmat = Prep$kmat, 
+      dmat = Prep$dmat,
+      capacity = capacity,
+      edge_name = edge_name,
+      tstep = .045, 
+      maxIter = maxIter, 
+      frctmultiplier = frctmultiplier, 
+      sparse = FALSE,
+      tol = tol, 
+      verbose = verbose) 
+
+NodeList <- Start$NodeStatus
+epoch <- tibble(epoch = 1:10,tstep = 0.045*(1.05^(1:10)))# tstep = 0.045+ (0.01*epoch)) #tstep = 0.045*(2^log(1:10)
+
+total_dynamics <-  Start$network_dynamics %>% mutate(tstep = .045, epoch = 0)
+
+for(i in 1:10){
+
+Out <- FindStabilSystem(
+      g = g,
+      distance = distance,
+      NodeStatus = NodeList, 
+      Adjmat = Prep$Adjmat, 
+      flow = flow,
+      kmat = Prep$kmat, 
+      dmat = Prep$dmat,
+      capacity = capacity,
+      edge_name = edge_name,
+      tstep = epoch$tstep[i], 
+      maxIter = maxIter, 
+      frctmultiplier = frctmultiplier, 
+      sparse = FALSE,
+      tol = tol, 
+      verbose = verbose)
+
+NodeList <- Out$NodeStatus
+
+total_dynamics <- bind_rows(total_dynamics, Out$network_dynamics %>% mutate(tstep = epoch$tstep[i], epoch = epoch$epoch[i]))
+
+}
+
+ total_dynamics  %>% group_by(tstep) %>%
+  mutate(t_norm = t/tstep,
+         Iter2 = Iter+((epoch)*(maxIter-1))) %>%
+ #filter(Iter2<1100) %>%
+ggplot(aes(x = Iter2, y =log10(kinetic_energy+force_energy), colour = as.factor(tstep))) + geom_line()
+
+total_dynamics %>%
+ggplot(aes(x = log10(force_energy), y = log10(kinetic_energy), colour = as.factor(tstep))) + geom_point()
+
+
+
+NodeList_static <- Start$NodeStatus 
+total_dynamics_static <-  Start$network_dynamics %>% mutate(tstep = .045, epoch = 0)
+
+for(i in 1:10){
+    
+Out <- FindStabilSystem(
+      g = g,
+      distance = distance,
+      NodeStatus = NodeList_static %>% mutate(acceleration = 0, velocity = 0, friction = 0), 
+      Adjmat = Prep$Adjmat, 
+      flow = flow,
+      kmat = Prep$kmat, 
+      dmat = Prep$dmat,
+      capacity = capacity,
+      edge_name = edge_name,
+      tstep = epoch$tstep[i], 
+      maxIter =  maxIter, 
+      frctmultiplier = frctmultiplier, 
+      sparse = FALSE,
+      tol = tol, 
+      verbose = verbose)
+
+NodeList_static <- Out$NodeStatus
+
+total_dynamics_static <- bind_rows(total_dynamics_static, Out$network_dynamics %>% mutate(tstep = epoch$tstep[i], epoch = epoch$epoch[i]))
+
+}
+
+test_static<- total_dynamics_static  %>% group_by(tstep) %>%
+  mutate(t_norm = t/tstep,
+         Iter2 = Iter+(epoch*(maxIter-1))) 
+
+test_static %>%
+ filter(tstep<0.045) %>%
+ggplot(aes(x = Iter2, y =log10(kinetic_energy), colour = as.factor(tstep))) + geom_line()
+
+
+bicomp <- SETS_embedding(g, 
+                           force =force,
+                           flow = flow,
+                           distance = distance,
+                           capacity = capacity,
+                           edge_name = edge_name,
+                           k = "k",
+                           tstep = 0.045,
+                           tol,
+                           maxIter = 11000,
+                           mass = 1,
+                           verbose = FALSE)
+
+
+all_res <- bind_rows(base_case$network_dynamics %>% mutate(tstep = .045, epoch = 0, type = "base"),
+          total_dynamics %>% mutate(type = "dynamic"),
+          total_dynamics_static %>% mutate(type = "static"),
+          bicomp$network_dynamics %>% mutate(tstep = .045, epoch = 0, type = "bicomp"))
+
+all_static <- all_res   %>%
+  mutate(t_norm = t/tstep,
+         Iter2 = Iter+(epoch*(maxIter-1))) 
+
+all_static %>%
+  #filter(type =="base") %>%
+# filter(Iter2<1100, Iter2>990) %>%
+  filter(log10(force_energy)<{-0}) %>%
+ggplot(aes(x = Iter2, y =log10(kinetic_energy), colour = as.factor(type), group = type)) + geom_line()
+
+all_static %>%
+  #filter(type =="base") %>%
+  #filter(Iter2<1100, Iter2>990) %>%
+  filter(log10(force_energy)<0) %>%
+ggplot(aes(x = Iter2, y =log10(force_energy), colour = as.factor(tstep), group = type)) + geom_line()+
+  facet_grid(~type)
+
 ```
 

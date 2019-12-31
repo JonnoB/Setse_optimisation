@@ -22,18 +22,17 @@
 #' @seealso \code{\link{Create_stabilised_blocks}} \code{\link{create_balanced_blocks}}
 #' @export
 
-Find_network_balance3 <- function(g, 
+Find_network_balance <- function(g, 
                                  force ="net_generation", 
                                  flow = "power_flow", 
                                  capacity = "capacity", 
                                  distance = "distance", 
                                  edge_name = "edge_name",
-                                 tstep = 0.02, 
-                                 mass = 1, 
-                                 maxIter = 2000, 
+                                 tstep = 0.5, 
+                                 mass = 2000, 
+                                 maxIter =2000, 
                                  frctmultiplier = 1, 
-                                 tol = 1e-10,
-                                 sparse = FALSE,
+                                 tol = 1e-10, 
                                  verbose = TRUE,
                                  two_node_solution = TRUE){
   #needs an edge attribute "distance"
@@ -42,7 +41,7 @@ Find_network_balance3 <- function(g,
   #two_node_solution: Logical value if true blocks that are a node pair will be solved by Newton Raphson method for speed
   
   #helper function that prepares the data
-  Prep <- Prepare_data_for_find_network_balance2(g, force, flow, distance, mass, edge_name)
+  Prep <- Prepare_data_for_find_network_balance(g, force, flow, distance, mass, edge_name)
   
   #do special case solution
   if(nrow(Prep$Link)==1 & two_node_solution){
@@ -64,34 +63,30 @@ Find_network_balance3 <- function(g,
       mutate(z = ifelse(force>0, 
                         tan(solution_angle)/2, #height above mid point
                         -tan(solution_angle)/2 ), #height below mid-point
-             NetForce = 0,
-             acceleration = 0
+             acceleration = 0,
+             t = 0,
+             Delta_acceleration = 0
       ) 
     
-    Out <- list(network_dynamics = tibble(t = 0, 
-                                 Iter = 0,
-                                 force_energy = 0, 
-                                 kinetic_energy = 0, 
-                                 strain =  sqrt(temp$z^2+Prep$Link$distance^2)-Prep$Link$distance^2), 
-                NodeStatus = temp
+    Out <- list(results = temp, 
+                NodeList = temp
     )
     #Solves using the iterative method.
   } else{
     
-    Out <- FindStabilSystem4(
+    Out <- FindStabilSystem(
       g = g,
       distance = distance,
       NodeStatus = Prep$NodeStatus, 
-      Adjmat = Prep$Adjmat, 
+      EdgeNode = Prep$A, 
       flow = flow,
-      kmat = Prep$kmat, 
-      dmat = Prep$dmat,
+      kvect = Prep$Link$k, 
+      dvect = Prep$Link$distance,
       capacity = capacity,
       edge_name = edge_name,
       tstep = tstep, 
       maxIter = maxIter, 
       frctmultiplier = frctmultiplier, 
-      sparse = sparse,
       tol = tol, 
       verbose = verbose) 
     

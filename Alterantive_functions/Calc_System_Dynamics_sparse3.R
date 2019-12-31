@@ -14,25 +14,31 @@
 #'
 #' @export
 
-Calc_System_Dynamics3 <- function(NodeStatus, ten_mat, damp_mat, kvect, dvect, mat_size, tstep = 1, non_empty_matrix, frctmultiplier = 1){
+Calc_System_Dynamics_sparse3 <- function(NodeStatus, ten_mat, damp_mat, kvect, dvect, mat_size, tstep = 1, non_empty_matrix, frctmultiplier = 1){
   
   #I am slightly unsure if the damping and tension are being updated in the right place. This isn't the end of the world
   #If they are slightly behind but It may make the solution slightly more stable which would give faster convergence
   
-  # #Create the damping matrix #The original function can be deleted
+  # #Create the damping matrix
   damp_mat[non_empty_matrix[,3]]<- 2*sqrt(kvect*NodeStatus[non_empty_matrix[,1],3])*NodeStatus[non_empty_matrix[,1],5]
 
   NodeStatus2 <- NodeStatus
-  NodeStatus2[,4] <- .rowSums(Create_Tension_matrix3(ten_mat,
-                                                     zvect = NodeStatus[non_empty_matrix[,1],2],
-                                                     zvect_t = NodeStatus[non_empty_matrix[,2],2],
+  NodeStatus2[,4] <- Matrix::rowSums(Create_Tension_matrix3(ten_mat, 
+                                                     zvect = NodeStatus[non_empty_matrix[,1],2], 
+                                                     zvect_t = NodeStatus[non_empty_matrix[,2],2], 
                                                      dvect, kvect,
-                                                     non_empty_index = non_empty_matrix[,3]),
-                              m = mat_size, n = mat_size) #tension
+                                                     non_empty_index = non_empty_matrix[,3])) #tension
+  # NodeStatus2[,4] <- .rowSums(Create_Tension_matrix3(ten_mat, 
+  #                                                    zvect = NodeStatus[non_empty_matrix[,1],2], 
+  #                                                    zvect_t = NodeStatus[non_empty_matrix[,2],2], 
+  #                                                    dvect, kvect,
+  #                                                    non_empty_index = non_empty_matrix[,3]), 
+  #                             m = mat_size, n = mat_size) #tension
   NodeStatus2[,2] <- Distance(NodeStatus[,2], NodeStatus[,5], NodeStatus[,8], t0 = NodeStatus[,10], t1 = NodeStatus[,10] + tstep) #distance
   NodeStatus2[,5] <- velocity(NodeStatus[,5], NodeStatus[,8], NodeStatus[,10], NodeStatus[,10] + tstep) #velocity
 
-  NodeStatus2[,6] <- .rowMeans(damp_mat, m = mat_size, n = mat_size)*frctmultiplier #friction
+  #NodeStatus2[,6] <- .rowMeans(damp_mat, m = mat_size, n = mat_size)*frctmultiplier #friction
+  NodeStatus2[,6] <- Matrix::rowMeans(damp_mat)*frctmultiplier #friction
   NodeStatus2[,7] <- NodeStatus2[,1] + NodeStatus2[,4] - NodeStatus2[,6] #Netforce
   NodeStatus2[,8] <- NodeStatus2[,7]/NodeStatus2[,3] #acceleration
   NodeStatus2[,9] <- (NodeStatus2[,8]-NodeStatus[,8])/tstep #delta acceleration...this can be removed

@@ -15,9 +15,13 @@
 #' @param tol A numeric. The tolerance factor for early stopping.
 #' @param verbose Logical. This value sets whether messages generated during the process are supressed or not.
 #' @export
+#' 
+#' 
+#' In this version the spring damping is removed and friction is for an object in a viscous fluid.
+#' This means that Fr = -bv where be is some constant in this case it is frctmultiplier. Appropriate values of b need to be determined 
 
 
-FindStabilSystem3 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat, capacity, edge_name = edge_name, 
+FindStabilSystem4 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat, capacity, edge_name = edge_name, 
                              tstep, maxIter = 1000, frctmultiplier = 1, 
                               tol = 1e-10, sparse = FALSE, verbose = TRUE){
   #Runs the physics model to find the convergence of the system.
@@ -37,7 +41,7 @@ FindStabilSystem3 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat,
   
   
   #friction_stop fricton is a stopping condition. defualts to FALSE. 
-  NodeList <- as.matrix(NodeStatus[,-1])
+  NodeList <- NodeList2 <-as.matrix(NodeStatus[,-1])
   
   #gets the dimensions of the matrix for bare bones column sum
   m <- dim(NodeList)
@@ -84,78 +88,67 @@ FindStabilSystem3 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat,
   while((Iter <= maxIter) & !system_stable ){
 
     # print(NodeList[[n]])
-    
+    #calculate the system dynamics. Either sparse or dense mode
     #sparse or dense mode chosen by user on basis of network size and of course sparsity
-    if(sparse){
-    temp <- Calc_System_Dynamics_sparse3(NodeList, 
-                                  ten_mat = ten_mat, 
-                                  damp_mat = damp_mat, 
-                                  kvect, dvect,  
-                                  mat_size = m[1], 
-                                  tstep, 
-                                  non_empty_matrix = non_empty_matrix, 
-                                  frctmultiplier)
-    }else{
-      
-      temp <- Calc_System_Dynamics3(NodeList, 
-                                           ten_mat = ten_mat, 
-                                           damp_mat = damp_mat, 
-                                           kvect, dvect,  
-                                           mat_size = m[1], 
-                                           tstep, 
-                                           non_empty_matrix = non_empty_matrix, 
-                                           frctmultiplier)
-      
-    }
     
-
+    #The code is not put in sub-functions as this creates memory management problems and half the time
+    #the program runs can be spent auto calling gc(). This reduces the copying of data...I think
+    #It overwirtes the preious values but doesn't create anything else
+    NodeList2 <- NodeList
+    #####
+    #create the tension matrix
+    #####
+    dzvect <- NodeList[non_empty_matrix[,2],2] - NodeList[non_empty_matrix[,1],2] #The difference in height between adjacent nodes 
+    
+    #the hypotenuse of the spring distance triangle
+    Hvect <- sqrt(dzvect^2 + dvect^2)
+    
+    #the tension vector. the dZvect/Hvect is the vertical component of the tension
+    ten_mat[non_empty_matrix[,3]] <- kvect*(Hvect-dvect)*dzvect/Hvect
+    
+    ####
+    ## Create the Damping matrix
+    ###
+    #damp_mat[non_empty_matrix[,3]]<- 2*sqrt(kvect*NodeList[non_empty_matrix[,1],3])*NodeList[non_empty_matrix[,1],5]
+    
+    if(sparse){
+      #This uses the matrix row aggregation functions which can be used on sparse matrices. This is faster and much more memory
+      #efficient for large matrices
+      NodeList2[,4] <- Matrix::rowSums(ten_mat) #tension
+      #NodeList2[,6] <- Matrix::rowMeans(damp_mat)*frctmultiplier #friction
+    }else{
+  #This uses the standard dense matrices, this is faster for smaller matrices.
+      
+      NodeList2[,4] <- .rowSums(ten_mat, m = m[1], n = m[1]) #tension
+     # NodeList2[,6] <- .rowMeans(damp_mat, m = m[1], n = m[1])*frctmultiplier #friction
+    }
+    #The remaining dynamics are calculated here
+    
+    #If these equations of motion work well then the distance and velocity equations can be removed
+    NodeList2[,2] <- NodeList[,5]*tstep +0.5*NodeList[,8]*tstep +NodeList[,2] #Distance  ###This is wrong needs squaring! 
+    NodeList2[,5] <- NodeList[,5] + NodeList[,8]*tstep #velocity
+    NodeList2[,6] <- frctmultiplier*NodeList2[,5] #friction of an object in a viscous fluid
+    NodeList2[,7] <- NodeList2[,1] + NodeList2[,4] - NodeList2[,6] #Netforce
+    NodeList2[,8] <- NodeList2[,7]/NodeList2[,3] #acceleration
+    NodeList2[,9] <- (NodeList2[,8]-NodeList[,8])/tstep #delta acceleration...this can be removed
+    NodeList2[,10] <- NodeList[,10] + tstep 
     
     #calculates the line strain each round
     #flow, edge_name, capacity are not used if alpha, capacity and percentile strain are not used.
     #This is a special compact version of line strain that is extra fast It has all extraneous data removed
     line_strain <- Calc_line_strain2(edge_mat, 
-                                    solved_height_df = temp,
+                                    solved_height_df = NodeList2,
                                     merge_order_df = merge_order_df
                                     )
     
     network_dynamics[Iter,]<-  c(Iter,
                         Iter*tstep, #time in seconds
-                        sum(abs(temp[,7])),  #force energy, the total amount of energy that will be used per second in the given state same as net force
-                        sum(0.5*temp[,3]*temp[,5]^2 ),#kinetic_energy. mass is constant for all nodes so could be a scaler
+                        sum(abs(NodeList2[,7])),  #force energy, the total amount of energy that will be used per second in the given state same as net force
+                        sum(0.5*NodeList2[,3]*NodeList2[,5]^2 ),#kinetic_energy. mass is constant for all nodes so could be a scaler
                         sum(line_strain[,6])
                         ) #sum of line strain in the system      
-    #pre simplification of the results matrix
-    # results[Iter,]<-  c(Iter*tstep, 
-    #   .colMeans(abs(temp[,c(2,7,5,8)]), m = m[1],n =  4), 
-    #   max(abs(temp[,8])),
-    #   max(abs(temp[,9])), 
-    #   max(abs(temp[,6])), 
-    #   sum(line_strain[,6])/number_edges,#mean(line_strain[,6]) #faster mean... although this is kind of not worth it
-    #   sum(0.5*temp[,3]*temp[,5]^2))
-#Removed resukts temporarily. Result doesn't work as the temp object is now a matrix not a df
-    
-  #   results[Iter,] <- c(temp$t[1],
-  #                       mean(abs(temp$z)),
-  #                       mean(abs(temp$NetForce)),
-  #                       mean(abs(temp$velocity)),
-  #                       mean(abs(temp$acceleration)),
-  #                       max(abs(temp$acceleration)),
-  #                       max(abs(temp$Delta_acceleration)),
-  #                       max(abs(temp$friction)),
-  #                       mean(line_strain$strain)
-  #                       )
-  #    # results[Iter,1:8]<- temp %>%
-  #    #  summarise(t = mean(t),
-  #    #            z = mean(abs(z)),
-  #    #            NetForce = mean(abs(NetForce)),
-  #    #            velocity = mean(abs(velocity)),
-  #    #            acceleration = mean(abs(acceleration)),
-  #    #            max_accel = max(abs(acceleration)),
-  #    #            max_Delta_accel = max(abs(Delta_acceleration)),
-  #    #            friction = max(abs(friction)))
-  #    # results[Iter,9] <- mean(line_strain$strain)
-  # 
-    NodeList <- temp
+
+    NodeList <- NodeList2
     
     #check if system is stableusing the acceleration and max acceleration
     if(is.infinite(network_dynamics[Iter,3])| is.infinite(network_dynamics[Iter,4])| is.infinite(network_dynamics[Iter,5])){ #if there are infinte values terminate early
