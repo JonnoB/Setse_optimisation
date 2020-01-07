@@ -20,9 +20,10 @@
 #' In this version the spring damping is removed and friction is for an object in a viscous fluid.
 #' This means that Fr = -bv where be is some constant in this case it is frctmultiplier. Appropriate values of b need to be determined 
 
+#caoacity, edge_name and flow are no longer used. If the preprocessing is all done in prep then distance can also be removed
 
 FindStabilSystem4 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat, capacity, edge_name = edge_name, 
-                             tstep, maxIter = 1000, frctmultiplier = 1, 
+                              tstep, maxIter = 1000, frctmultiplier = 1, 
                               tol = 1e-10, sparse = FALSE, verbose = TRUE){
   #Runs the physics model to find the convergence of the system.
   
@@ -46,32 +47,26 @@ FindStabilSystem4 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat,
   #gets the dimensions of the matrix for bare bones column sum
   m <- dim(NodeList)
   
- #Sparse matrix mode reduces time and memory requirements for larger matrices 100 nodes used dense 300 use sparse
+  #Sparse matrix mode reduces time and memory requirements for larger matrices 100 nodes used dense 300 use sparse
   if(sparse){
-  ten_mat <- damp_mat <- Matrix(Adjmat, sparse = T)} else{
-    ten_mat <- damp_mat <- Adjmat
-  }
+    ten_mat  <- Matrix(Adjmat, sparse = T)} else{
+      ten_mat <- Adjmat
+    }
   
   #results <- as.list(rep(NA,maxIter))
-  network_dynamics <- matrix(data = NA, nrow = maxIter, ncol = 5) %>%
+  network_dynamics <- matrix(data = NA, nrow = maxIter, ncol = 4) %>%
     as_tibble() %>%
-    set_names(c("Iter","t", "force_energy", "kinetic_energy", "strain")) %>%
+    set_names(c("Iter","t", "static_force", "kinetic_force")) %>%
     as.matrix()
-  # results <- matrix(data = NA, nrow = maxIter, ncol = 10) %>%
-  #   as_tibble() %>%
-  #   set_names(c("t", "z", "NetForce", "velocity", "acceleration", "max_accel", 
-  #               "max_Delta_accel", "friction", "strain", "kinetic_en")) %>%
-  #   as.matrix()
-  
+
   #prep the graph matrix so it doesn't need to be done in the loop
   edge_mat <-  as_data_frame(g)[,c("from", "to", distance)] %>%
     mutate(
-               from_z = NA,
-               to_z = NA,
-               dz = NA,
-               H = NA,
-               strain = NA)
-
+      from_z = NA,
+      to_z = NA,
+      dz = NA,
+      H = NA,
+      strain = NA)
   
   #find the data frame order of the 'from' and 'to nodes to merge the solved_height_df to the 
   merge_order_df <-tibble( from_z =match(edge_mat$from, NodeStatus[,1]),
@@ -86,7 +81,7 @@ FindStabilSystem4 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat,
   system_stable <- FALSE
   
   while((Iter <= maxIter) & !system_stable ){
-
+    
     # print(NodeList[[n]])
     #calculate the system dynamics. Either sparse or dense mode
     #sparse or dense mode chosen by user on basis of network size and of course sparsity
@@ -117,68 +112,59 @@ FindStabilSystem4 <- function(g, distance, NodeStatus, Adjmat, flow, kmat, dmat,
       NodeList2[,4] <- Matrix::rowSums(ten_mat) #tension
       #NodeList2[,6] <- Matrix::rowMeans(damp_mat)*frctmultiplier #friction
     }else{
-  #This uses the standard dense matrices, this is faster for smaller matrices.
+      #This uses the standard dense matrices, this is faster for smaller matrices.
       
       NodeList2[,4] <- .rowSums(ten_mat, m = m[1], n = m[1]) #tension
-     # NodeList2[,6] <- .rowMeans(damp_mat, m = m[1], n = m[1])*frctmultiplier #friction
+      # NodeList2[,6] <- .rowMeans(damp_mat, m = m[1], n = m[1])*frctmultiplier #friction
     }
     #The remaining dynamics are calculated here
     
     #If these equations of motion work well then the distance and velocity equations can be removed
     NodeList2[,2] <- NodeList[,5]*tstep +0.5*NodeList[,8]*tstep +NodeList[,2] #Distance  ###This is wrong needs squaring! 
     NodeList2[,5] <- NodeList[,5] + NodeList[,8]*tstep #velocity
-    NodeList2[,6] <- frctmultiplier*NodeList2[,5] #friction of an object in a viscous fluid
+    NodeList2[,6] <- frctmultiplier*NodeList2[,5] #friction of an object in a viscous fluid under laminar flow
     NodeList2[,7] <- NodeList2[,1] + NodeList2[,4] - NodeList2[,6] #Netforce
     NodeList2[,8] <- NodeList2[,7]/NodeList2[,3] #acceleration
     NodeList2[,9] <- (NodeList2[,8]-NodeList[,8])/tstep #delta acceleration...this can be removed
     NodeList2[,10] <- NodeList[,10] + tstep 
-    
-    #calculates the line strain each round
-    #flow, edge_name, capacity are not used if alpha, capacity and percentile strain are not used.
-    #This is a special compact version of line strain that is extra fast It has all extraneous data removed
-    line_strain <- Calc_line_strain2(edge_mat, 
-                                    solved_height_df = NodeList2,
-                                    merge_order_df = merge_order_df
-                                    )
+
     
     network_dynamics[Iter,]<-  c(Iter,
-                        Iter*tstep, #time in seconds
-                        sum(abs(NodeList2[,7])),  #force energy, the total amount of energy that will be used per second in the given state same as net force
-                        sum(0.5*NodeList2[,3]*NodeList2[,5]^2 ),#kinetic_energy. mass is constant for all nodes so could be a scaler
-                        sum(line_strain[,6])
-                        ) #sum of line strain in the system      
-
+                                 Iter*tstep, #time in seconds
+                                 sum(abs(NodeList2[,1] + NodeList2[,4])),  #static force. The force exerted on the node
+                                 sum(0.5*NodeList2[,3]*NodeList2[,5]/tstep )#kinetic_energy. mass is constant for all nodes so could be a scaler
+    ) #sum of line strain in the system      
+    
     NodeList <- NodeList2
     
     #check if system is stableusing the acceleration and max acceleration
-    if(is.infinite(network_dynamics[Iter,3])| is.infinite(network_dynamics[Iter,4])| is.infinite(network_dynamics[Iter,5])){ #if there are infinte values terminate early
+    if(!is.finite(network_dynamics[Iter,3])| !is.finite(network_dynamics[Iter,4])){ #if there are infinte values terminate early
       system_stable <- TRUE
     } else{
-      system_stable <- (sum(network_dynamics[Iter,3:4]) < tol)
+      system_stable <- (network_dynamics[Iter,3] < tol)
     }
-
+    
     if(verbose){
-
+      
       print(paste("Iteration", Iter,
-                "strain", signif(network_dynamics[Iter,5], 3),
-                "net force", signif(network_dynamics[Iter,3], 3),
-                "kinetic force", signif(network_dynamics[Iter,3], 3))
+                  "net force", signif(network_dynamics[Iter,3], 3),
+                  "kinetic force", signif(network_dynamics[Iter,3], 3))
       ) # print result
-
+      
     }
-
-     Iter <- Iter + 1 # add next iter
-   
-   }
-
+    
+    Iter <- Iter + 1 # add next iter
+    
+  }
+  
   #Early termination causes NA values. These are removed by the below code
   #
   network_dynamics <- as_tibble(network_dynamics) %>%
     filter(complete.cases(.))
-
-    Out <- list(as_tibble(network_dynamics), bind_cols(NodeStatus["node"] , as_tibble(NodeList)))
+  
+  Out <- list(as_tibble(network_dynamics), bind_cols(NodeStatus["node"] , as_tibble(NodeList)))
   names(Out) <- c("network_dynamics", "NodeStatus")
   
   return(Out)
-
+  
 }
