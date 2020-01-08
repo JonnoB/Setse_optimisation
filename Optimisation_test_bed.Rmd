@@ -125,7 +125,7 @@ tol = 2/1e6
 maxIter = 20000
 mass = 1
 verbose = FALSE
-frctmultiplier = 0.5
+frctmultiplier = 1.5
 coef_drag <- frctmultiplier
 sparse = FALSE
 
@@ -562,7 +562,7 @@ Convergence seems to follow three phases. The first phase observed in log space 
 list.files(file.path("/home/jonno/NetworkSpringEmbedding/R"), pattern = ".R", full.names = T) %>%
   walk(~source(.x))
 
-max_iter <- 200
+max_iter <- 2000
 tstep <- 0.02
 coef_drag <- 1.5
 mass <- 1
@@ -574,7 +574,7 @@ profvis(    base_case <-  Find_network_balance(g = g,
                                                edge_name = edge_name,
                                                tstep = tstep,
                                                tol = tol,
-                                               max_iter = max_iter*10,
+                                               max_iter = max_iter*11,
                                                mass = mass,
                                                verbose = FALSE,
                                                sparse = FALSE,
@@ -1026,9 +1026,45 @@ ggraph(g2, layout = layout_with_fr(g)) +
 ```
 
 
-
+#comparison of two models
 ```{r}
-(relative_blocks$t)
+profvis(    base_case <-  Find_network_balance(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               max_iter = 4e4,
+                                               mass = mass,
+                                               sparse = FALSE,
+                                               coef_drag =coef_drag),
+            interval = 0.005)
+
+
+  
+ #FindStabilSystem_test <-compiler::cmpfun(FindStabilSystem_test)
+  
+profvis(    test_case <-  Find_network_balance4(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               max_iter = 4e4,
+                                               mass = mass,
+                                               sparse = FALSE,
+                                               coef_drag =coef_drag),
+            interval = 0.005)
+
+
+all.equal(base_case$node_status, test_case$node_status)
+
+test1 <- base_case$node_status
+test2 <-  test_case$node_status
+
+class(test_case$node_status$elevation)
 ```
 
 #C++ Armadillo

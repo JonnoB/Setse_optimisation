@@ -1,6 +1,6 @@
 #' Find stabil system
 #' 
-#' This function uses the SETS embedding to find the equilibrium position of a network or a bi-connected component
+#' Runs the SETSe model to find the convergence of the system.
 #' @param node_status A data frame The current dynamics and forces experienced by the node a data frame.
 #' @param ten_mat A data frame The current dynamics and forces experienced by the node a data frame.
 #' @param non_empty_matrix A numeric matrix. contains the index of the non-empty cells in the adjacency matrix. see details.
@@ -12,28 +12,37 @@
 #' @param coef_drag A numeric value. Used to set a multiplier on the friction value. Generally leave this alone..s.
 #' @param tol A numeric. The tolerance factor for early stopping.
 #' @param sparse Logical. Whether or not the function should be run using sparse matrices. must match the actual matrix, this could prob be automated
-#' @param verbose Logical. This value sets whether messages generated during the process are supressed or not.
 #' @export
 #' 
-#' @details The non_empty matrixhe row column position absolute index and transpose index of the edges in the matrix
-#' This means vectors can be used for most operation greatly reducing the amount of memory required and 
-#' providing a modest speed increase. The non_empty_matrix is propduced by the 'Prepare_data_for_find_network_balance' function.
+#' @details The non_empty matrix contains the row, column position and absolute index and transpose index of the edges in the matrix
+#' This means vectors can be used for most operations greatly reducing the amount of memory required and 
+#' providing a modest speed increase. The non_empty_matrix is produced by the 'Prepare_data_for_find_network_balance' function.
 #'
 # Strips out all pre processing to make it as efficient and simple as possible
 
-#caoacity, edge_name and flow are no longer used. If the preprocessing is all done in prep then distance can also be removed
-
 FindStabilSystem_test <- function(node_status, ten_mat, non_empty_matrix, kvect, dvect, mass,
-                             tstep, max_iter = 1000, coef_drag = 1, 
-                             tol = 1e-10, sparse = FALSE, verbose = FALSE){
+                                  tstep, max_iter = 1000, coef_drag = 1, 
+                                  tol = 1e-10, sparse = FALSE){
   #Runs the physics model to find the convergence of the system.
   
+  #vectors are used throughout instead of a single matrix as it turns out they are faster due to less indexing and use much less RAM.
+  
   #friction_stop fricton is a stopping condition. defualts to FALSE. 
-  NodeList <- as.matrix(node_status[,-1])
+  NodeList <- node_status[,-1]
+  force <- NodeList[,1]
+  elevation <-NodeList[,2]
+  net_tension <-NodeList[,3]
+  velocity <- NodeList[,4]
+  friction <- NodeList[,5]
+  static_force <-NodeList[,6]
+  net_force <- NodeList[,7]
+  acceleration <- NodeList[,8]
 
   #gets the dimensions of the matrix for bare bones column sum
-  #m <- dim(NodeList)
   
+  non_empty_vect <- non_empty_matrix[,1]
+  non_empty_t_vect <- non_empty_matrix[,2]
+  non_empty_index_vect <- non_empty_matrix[,3]
   #This dataframe is one of the final outputs of the function, it is premade for memory allocation
   network_dynamics <- matrix(data = NA, nrow = max_iter, ncol = 6) %>%
     as_tibble() %>%
@@ -59,40 +68,40 @@ FindStabilSystem_test <- function(node_status, ten_mat, non_empty_matrix, kvect,
     #create the tension matrix
     #####
     #dz is the change in eleveation
-    dzvect <- NodeList[non_empty_matrix[,2],2] - NodeList[non_empty_matrix[,1],2] #The difference in height between adjacent nodes 
-   
+    dzvect <- elevation[non_empty_t_vect] - elevation[non_empty_vect] #The difference in height between adjacent nodes 
+    
     #the hypotenuse of the spring distance triangle
     Hvect <- sqrt(dzvect^2 + dvect^2)
-
+    
     #the tension vector. the dZvect/Hvect is the vertical component of the tension
-    ten_mat[non_empty_matrix[,3]] <- kvect*(Hvect-dvect)*dzvect/Hvect
-
+    ten_mat[non_empty_index_vect] <- kvect*(Hvect-dvect)*dzvect/Hvect
+    
     #The remaining dynamics are calculated here
     
-    NodeList[,2] <- NodeList[,4]*tstep +0.5*NodeList[,8]*tstep*tstep + NodeList[,2] #Distance/elevation s1 = ut+0.5at^2+s0
-    NodeList[,4] <- NodeList[,4] + NodeList[,8]*tstep #velocity v1 = v0 +at
-    NodeList[,6] <- NodeList[,1] + NodeList[,3] #static force 
+    elevation <- velocity*tstep +0.5*acceleration*tstep*tstep + elevation #Distance/elevation s1 = ut+0.5at^2+s0
+    velocity <- velocity + acceleration*tstep #velocity v1 = v0 +at
+    static_force <- force + net_tension #static force 
     
     if(sparse){
       #This uses the matrix row aggregation functions which can be used on sparse matrices. This is faster and much more memory
       #efficient for large matrices
-      NodeList[,3] <- Matrix::rowSums(ten_mat) #tension
+      net_tension <- Matrix::rowSums(ten_mat) #tension
     }else{
       #This uses the standard dense matrices, this is faster for smaller matrices.
-      NodeList[,3] <- ten_mat %*% one_vect  #.rowSums(ten_mat, m = m[1], n = m[1]) #tension
+      net_tension <- ten_mat %*% one_vect  #.rowSums(ten_mat, m = m[1], n = m[1]) #tension
     }
-    NodeList[,5] <- coef_drag*NodeList[,4] #friction of an object in a viscous fluid under laminar flow
-    NodeList[,7] <- NodeList[,6] - NodeList[,5] #net force
-    NodeList[,8] <- NodeList[,7]/mass #acceleration
-    NodeList[,9] <- NodeList[,9] + tstep #current time #This may not be neccessary but doesn't really hurt
+    friction <- coef_drag*velocity #friction of an object in a viscous fluid under laminar flow
+    net_force <- static_force - friction #net force
+    acceleration <- net_force/mass #acceleration
+    # NodeList[,9] <- NodeList[,9] + tstep #current time #This may not be neccessary but doesn't really hurt
     
     
     network_dynamics[Iter,]<-  c(Iter, #Iteration
                                  Iter*tstep, #time in seconds
-                                 sum(abs(NodeList[,6])),  #static force. The force exerted on the node
-                                 sum(abs(0.5*mass*NodeList[,4]/tstep)), #kinetic_force 
+                                 sum(abs(static_force)),  #static force. The force exerted on the node
+                                 sum(abs(0.5*mass*velocity/tstep)), #kinetic_force 
                                  sum( 0.5*kvect*(Hvect-dvect)^2),     #spring potential_energy
-                                 sum(0.5*mass*NodeList[,4]^2)    #kinetic_energy
+                                 sum(0.5*mass*velocity^2)    #kinetic_energy
     ) 
     
     #check if system is stable using the acceleration and max acceleration
@@ -102,7 +111,7 @@ FindStabilSystem_test <- function(node_status, ten_mat, non_empty_matrix, kvect,
     } else{
       system_stable <- (network_dynamics[Iter,3] < tol)
     }
-
+    
     Iter <- Iter + 1 # add next iter
     
   }
@@ -111,9 +120,19 @@ FindStabilSystem_test <- function(node_status, ten_mat, non_empty_matrix, kvect,
   #
   network_dynamics <- as_tibble(network_dynamics) %>%
     filter(complete.cases(.))
-  
-  Out <- list(as_tibble(network_dynamics), bind_cols(node_status[,"node",drop=FALSE] , as_tibble(NodeList)))
-  names(Out) <- c("network_dynamics", "node_status")
+#combine all the vectors together again into a tibble
+  Out <- list(network_dynamics = as_tibble(network_dynamics), 
+              node_status = bind_cols(node_status[,"node",drop=FALSE] , 
+                                      tibble(  force = force,
+                                               elevation = as.vector(elevation),
+                                               net_tension = as.vector(net_tension),
+                                               velocity = as.vector(velocity),
+                                               friction = as.vector(friction),
+                                               static_force = as.vector(static_force),
+                                               net_force = as.vector(net_force),
+                                               acceleration = as.vector(acceleration),
+                                               t = tstep*(Iter-1)))) #1 needs to be subtracted from the total as the final thing
+  #in the loop is to add 1 to the iteration
   
   return(Out)
   

@@ -80,7 +80,7 @@ Find_network_balance4 <- function(g,
     #Solves using the iterative method.
   } else{
     
-    Out <- FindStabilSystem5(
+    Out <- FindStabilSystem_test(
       node_status = Prep$node_status, 
       ten_mat = Prep$ten_mat, 
       non_empty_matrix = Prep$non_empty_matrix, 

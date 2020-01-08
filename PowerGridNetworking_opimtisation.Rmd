@@ -1,0 +1,112 @@
+---
+title: "Untitled"
+author: "Jonathan Bourne"
+date: "06/01/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+OPtimise the power grid networking attack the grid algortihm
+```{r}
+packages <- c("tidyverse", "igraph","readr","readxl", "zoo", "stringr","xtable", "rlang", "profvis")
+
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+sapply(packages, library, character.only = TRUE)
+
+basewd <- "/home/jonno/Dropbox/Jonathan_Bourne_Phd_Folder"
+
+list.files(file.path("/home/jonno/Useful_PhD__R_Functions"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+list.files(file.path("/home/jonno/PowerGridNetworking/R"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+source(file.path("/home/jonno/ProportionalLoading", "CreateGBase.R"))
+```
+
+```{r}
+setwd(PLwd)
+
+#Ensure there is powerflow
+#Remove Dead Ends
+g <- RemoveDeadEnds(gbase) 
+#saveRDS(gbase, file.path("/home/jonno/Dropbox/AWS_Simulation_Files","gbase.rds"))
+
+#provide correct power flow
+g <- g %>%
+  PowerFlow(., SlackRef = get.vertex.attribute(., "name")[which.min(get.vertex.attribute(., "Bus.Order"))] )
+
+
+AttackRounds <- 1000
+
+#Create a reproducible attack order
+seed<- 1589
+filename <- "DeleteOrders100.rds"
+if(file.exists(filename)){
+  DeleteOrders <- readRDS(filename)
+} else {
+set.seed(seed)
+DeleteOrders <- MultiAttackOrder(g, Target = "Nodes", 100)  
+#saveRDS(DeleteOrders, file.path(PLwd, filename))
+}
+
+```
+
+```{r}
+
+```
+
+
+
+```{r}
+testg <- Proportional_Load(g, 1.5)
+
+#get single deletion order
+DeletionOrder <- DeleteOrders[1,-1] %>% t %>% .[,1]
+
+ FixedNodes <- quo(FixedStrategyAttack(g, DeletionOrder))
+    #suppres attack the grid messages
+profvis(   base_g_attack_1 <-AttackTheGrid(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 1,
+                                                   CascadeMode = TRUE),
+           interval = 0.005)
+   
+   
+   
+profvis(      base_g_attac_10 <-AttackTheGrid(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE))
+      
+profvis(         PL15_g_attack_1 <-AttackTheGrid(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 1,
+                                                   CascadeMode = TRUE))
+
+start_time_no_gc <- system.time(base_g_attack_1 <- suppressMessages(AttackTheGrid(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 1000,
+                                                   CascadeMode = TRUE)))
+
+
+start_time_gc <- system.time(base_g_attack_1 <-AttackTheGrid(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 1000,
+                                                   CascadeMode = TRUE))
+ 
+start_time_gc/start_time_no_gc
+```
+
