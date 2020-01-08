@@ -77,7 +77,7 @@ This is because the youngs modulus is pretty outhtere and who understands it any
 
 "UK_high_voltage.rds" 
 list.files("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs")
-g2 <- readRDS(file.path("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs",  "IEEE_118_igraph.rds"))
+g2 <- readRDS(file.path("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs",  "IEEE_118_igraph.rds" ))#"IEEE_118_igraph.rds"))
 
 g3 <- g2 %>% Proportional_Load(., 3, PowerFlow = "power_flow", Link.Limit = "edge_capacity")
 
@@ -898,6 +898,20 @@ I also don't understand what it does.
 I want re-write the function so that it is more intuitive.
 Re-writing the function is extremly hard
 ```{r}
+list.files(file.path("/home/jonno/NetworkSpringEmbedding/R"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+OriginBlock <- Find_network_balance_expanded(List_of_BiConComps[[11]],
+                                  force =force, 
+                                  flow = flow, 
+                                  tstep = tstep, 
+                                  coef_drag = coef_drag,
+                                  tol = tol, 
+                                  distance = distance, 
+                                  edge_name = edge_name,
+                                  max_iter =  max_iter, 
+                                  mass =  mass, 
+                                  sparse = sparse,
+                                  verbose = verbose)
 
 #The origin block is the largest connected component
 
@@ -917,8 +931,7 @@ articulation_nodes_df <-tibble(name = names(biconnected_g_info$articulation_poin
 #This is done my numbering all the nodes from 1 to the total nodes in the component. then finding the names of the node in the origin block
 #that are also biconnected components. These nodes are removed and the the node with the smallest ID is the origin point from which
 #distances and shortes paths will be measured.
-origin_block_base_node_name <-get.vertex.attribute(g, 
-                                                   "name")[-which(get.vertex.attribute(List_of_BiConComps[[OriginBlock_number]],"name") %in% articulation_nodes_df$name)] %>% 
+origin_block_base_node_name <-get.vertex.attribute(g,"name")[-which(get.vertex.attribute(List_of_BiConComps[[OriginBlock_number]],"name") %in% articulation_nodes_df$name)] %>% 
   min
 
 #The distance from the base node is calculated here in a named vector,
@@ -966,8 +979,7 @@ floor_df_2<- ceiling_df_2 <- node_bicomp_relation  %>%
          path_component2 = NA,
          target_node_name = NA) %>% slice(0)
 
-for(i in 1:length(unique(node_bicomp_relation$name)) ){
-  
+for(i in 1:length(bicomp_shortest_paths$vpath) ){
   target_shortest_path <-i
   
   component_specific_floor_ceiling_nodes <- bicomp_shortest_paths$vpath[[target_shortest_path]]
@@ -977,6 +989,118 @@ for(i in 1:length(unique(node_bicomp_relation$name)) ){
   component_specific_floor_ceiling_nodes_2 <- names(bicomp_shortest_paths$vpath[[target_shortest_path]])[-1]
   
   template_nodes_df <-node_bicomp_relation %>%
+    ungroup() %>%
+    group_by(component) %>%
+    mutate(path_component = (name %in% component_specific_floor_ceiling_nodes_2)*1,
+           path_component2 = sum(path_component)) %>%
+    ungroup %>%
+    mutate(target_node_name = names(node_path[length(node_path)]))
+  
+  floor_df <- template_nodes_df  %>%
+    filter(path_component==1, #the node has to be on the shortest path
+           (path_component2>1 | #And the component the node is in needs to have a floor and ceiling
+              id == target_node_name) & # or be the target node
+             is_floor)#and all the nodes need to be floors
+  
+  #This finds the ceilings using the floor dataframe to subset the data
+  ceiling_df <- template_nodes_df %>%
+    filter((component %in% floor_df$component) | #The component has to be one of the components that contains a floor
+             component ==OriginBlock_number, #or it has to be the origin block component
+           id %in% floor_df$id, #And the node id has to be a node that is also a floor
+           !is_floor) #But the node cannot be in a component where it is actually a floor
+  
+  floor_df_2 <- bind_rows(floor_df_2, floor_df)
+  ceiling_df_2 <- bind_rows(ceiling_df_2, ceiling_df)
+  }
+
+#these two peieces of code create the data frames that provide the references for all
+ceiling_df <- node_bicomp_relation %>%
+ left_join(ceiling_df_2 %>% select(ref_node = name, ref_component = component, name = target_node_name) , by = "name") %>%
+  filter(component !=  OriginBlock_number) %>%
+  distinct(component, ref_node, ref_component) %>%
+  make_interaction_matrix(.)
+
+floor_df <- node_bicomp_relation %>%
+ left_join(floor_df_2 %>% select(ref_node = name, ref_component = component, name = target_node_name) , by = "name") %>%
+  filter(component !=  OriginBlock_number) %>%
+  distinct(component, ref_node, ref_component) %>%
+  make_interaction_matrix(.)
+
+
+test2 <- as.matrix(floor_df)
+
+make_interaction_matrix <- function(target_df){
+#the edges in the meta graph, these are only the articulation nodes
+active_edges <- relative_blocks %>%
+  filter(Iter == max(Iter)) %>%
+  left_join(., target_df, by = "component") %>%
+  mutate(active_reference = 1) %>%
+  filter(complete.cases(.)) %>%
+  mutate(node_comp_rows = paste(node, component, sep ="-"),
+         node_comp_columns = paste(ref_node, ref_component, sep ="-")) %>%
+  select(node_comp_rows, node_comp_columns, active_reference) %>%
+  select(1:2)#remove missing these occur in the terminating components
+
+#the nodes in the meta graph, this is all the node/component relationships
+non_active_edges <- relative_blocks %>%
+  filter(Iter == max(Iter)) %>%
+  mutate(ref_node = node,
+         ref_component = component,
+         active_reference = 0) %>%
+  mutate(node_comp_rows = paste(node, component, sep ="-"),
+         node_comp_columns = paste(ref_node, ref_component, sep ="-")) %>%
+  arrange(node) %>%
+  select(node_comp_rows, node_comp_columns, active_reference) %>%
+  select(1:2)
+
+#The sparse matrix of the  floor/ceiling interaction
+sparse_matrix_result <- graph_from_data_frame(node_component_pairs,
+                                              directed = F,
+                                              vertices = non_active_edges) %>%
+  as_adjacency_matrix() 
+
+return(sparse_matrix_result)
+}
+
+block_diag_floor <- bdiag(lapply(1:(max_iter+1), function(n){floor_df}))
+block_diag_ceiling <- bdiag(lapply(1:(max_iter+1), function(n){ceiling_df}))
+
+adjust_elevation <- as.vector(block_diag_ceiling %*% relative_blocks$elevation) + as.vector(block_diag_floor %*% relative_blocks$elevation)
+adjust_velocity <- as.vector(block_diag_ceiling %*% relative_blocks$velocity) + as.vector(block_diag_floor %*% relative_blocks$velocity)
+  
+
+
+g2 <- set.vertex.attribute(g, name = "color", value = NA)  %>% 
+ # set.vertex.attribute(., name = "floor", index =  floor_df$id, value = "is_floor") %>%
+  set.edge.attribute(., name = "color", index = edge_path, value = "red") %>%
+  set.edge.attribute(., name = "target_comp", index =  edge_path, "target")
+set.seed(158)
+ggraph(g2, layout = layout_with_fr(g)) +
+   geom_edge_link2(aes(color = target_comp), width = 0.7) +
+  scale_edge_colour_discrete() +
+  geom_node_point( aes(color = color ),
+                   size = 2.5) +
+  labs(edge_colour = "shortest path", shape = "Node type", "") +
+  ggtitle("IEEE 118 power grid with Fruchtman Reingold projection")
+
+
+
+```
+
+
+```{r}
+test_loop_base<- function(){
+  for(i in 1:length(bicomp_shortest_paths$vpath) ){
+  print(i)
+  target_shortest_path <-i
+  
+  component_specific_floor_ceiling_nodes <- bicomp_shortest_paths$vpath[[target_shortest_path]]
+  node_path <- bicomp_shortest_paths$vpath[[target_shortest_path]]
+  edge_path <- bicomp_shortest_paths$epath[[target_shortest_path]] #this may not be necessary and then output can be "vpath" only
+  
+  component_specific_floor_ceiling_nodes_2 <- names(bicomp_shortest_paths$vpath[[target_shortest_path]])[-1]
+  
+  template_nodes_df <-template_nodes_df <-node_bicomp_relation %>%
     ungroup() %>%
     group_by(component) %>%
     mutate(path_component = (name %in% component_specific_floor_ceiling_nodes_2)*1,
@@ -1003,25 +1127,58 @@ for(i in 1:length(unique(node_bicomp_relation$name)) ){
   
   floor_df_2 <- bind_rows(floor_df_2, floor_df)
   ceiling_df_2 <- bind_rows(ceiling_df_2, ceiling_df)
+  }
+  return(list(floor_df = floor_df_2, ceiling_df = ceiling_df_2))
 }
 
 
+test_loop_1<- function(){
+  for(i in 1:length(bicomp_shortest_paths$vpath) ){
+  target_shortest_path <-i
+  
+  component_specific_floor_ceiling_nodes <- bicomp_shortest_paths$vpath[[target_shortest_path]]
+  node_path <- bicomp_shortest_paths$vpath[[target_shortest_path]]
+  edge_path <- bicomp_shortest_paths$epath[[target_shortest_path]] #this may not be necessary and then output can be "vpath" only
+  
+  component_specific_floor_ceiling_nodes_2 <- names(bicomp_shortest_paths$vpath[[target_shortest_path]])[-1]
+  
+  template_nodes_df <-node_bicomp_relation %>%
+    ungroup() %>%
+    group_by(component) %>%
+    mutate(path_component = (name %in% component_specific_floor_ceiling_nodes_2)*1,
+           path_component2 = sum(path_component)) %>%
+    ungroup %>%
+    mutate(target_node_name = names(node_path[length(node_path)]))
+  
+  floor_df <- template_nodes_df  %>%
+    filter(path_component==1, #the node has to be on the shortest path
+           (path_component2>1 | #And the component the node is in needs to have a floor and ceiling
+              id == target_node_name) & # or be the target node
+             is_floor)#and all the nodes need to be floors
+  
+  #This finds the ceilings using the floor dataframe to subset the data
+  ceiling_df <- template_nodes_df %>%
+    filter((component %in% floor_df$component) | #The component has to be one of the components that contains a floor
+             component ==OriginBlock_number, #or it has to be the origin block component
+           id %in% floor_df$id, #And the node id has to be a node that is also a floor
+           !is_floor) #But the node cannot be in a component where it is actually a floor
+  
+  floor_df_2 <- bind_rows(floor_df_2, floor_df)
+  ceiling_df_2 <- bind_rows(ceiling_df_2, ceiling_df)
+  }
+  return(list(floor_df = floor_df_2, ceiling_df = ceiling_df_2))
+}
 
-g2 <- set.vertex.attribute(g, name = "color", value = NA)  %>% 
-  set.vertex.attribute(., name = "color", index =  component_specific_floor_ceiling_nodes, value = "path artic") %>%
-  set.vertex.attribute(., name = "floor", index =  floor_df$id, value = "is_floor") %>%
-  set.edge.attribute(., name = "color", index = edge_path, value = "red") %>%
-  set.edge.attribute(., name = "target_comp", index =  edge_path, "target")
-set.seed(158)
-ggraph(g2, layout = layout_with_fr(g)) +
-   geom_edge_link2(aes(color = target_comp), width = 0.7) +
-  scale_edge_colour_discrete() +
-  geom_node_point( aes(color = floor ),
-                   size = 2.5) +
-  labs(edge_colour = "shortest path", shape = "Node type", "") +
-  ggtitle("IEEE 118 power grid with Fruchtman Reingold projection")
+test_loop_base_df <- test_loop_base()
+test_loop_1_df <- test_loop_1()
 
+time1 <-system.time(test_loop_base_df <- test_loop_base())
+time2 <-system.time(test_loop_1_df <- test_loop_1())
 
+time1/time2
+
+all.equal(test_loop_1_df$floor_df, test_loop_base_df$floor_df)
+all.equal(test_loop_1_df$ceiling_df, test_loop_base_df$ceiling_df)
 
 ```
 

@@ -74,17 +74,20 @@ Create_stabilised_blocks_expanded <- function(g,
   #extract the articulation nodes
   ArticulationVect <- get.vertex.attribute(g, "name", Block_tree$articulation_points)
   
+#Insert the Origin block back into the list
+  full_list <- list() #create empty list
+  full_list[BlockNumbers] <- StabilModels #add sub models
+  full_list[[OriginBlock_number]] <- OriginBlock #insert the origin block
+  
   #place all nodes relative to the origin
-  relative_blocks1 <- 1:length(StabilModels) %>% 
+  relative_blocks <- 1:length(full_list) %>% 
     map_df(~{
-      #print(.x) #It is a bit annoying and pointless now
-      StabilModels[[.x]] %>%
-        mutate(Reference_ID = .x)
+      full_list[[.x]] %>%
+        mutate(component = .x) #mark each block with it's component reference number
       
-    }) %>%
-    bind_rows(OriginBlock %>% 
-                mutate(Reference_ID = 0)) %>%
-    mutate(Articulation_node = (node %in% ArticulationVect ))
+    })  %>%
+    mutate(Articulation_node = (node %in% ArticulationVect ),
+           Iter = as.integer(t/tstep))
 
   
   #The height of each node relative to the origin and normalised
