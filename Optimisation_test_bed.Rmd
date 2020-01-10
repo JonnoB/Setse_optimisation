@@ -14,7 +14,7 @@ What can I do the get speed up improvements?
 #setup
 Load data. I am going to use provis so I can't load the package version of the function I have to load them direct into the workspace
 ```{r}
-packages <- c("tidyverse", "igraph", "igraphdata", "minpack.lm", "ggraph", "profvis", "microbenchmark", "ggraph")
+packages <- c("tidyverse", "igraph", "igraphdata", "minpack.lm", "ggraph", "profvis", "microbenchmark", "ggraph", "Matrix")
 
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
@@ -693,8 +693,9 @@ bicomp <- SETS_embedding(g,
                          tol,
                          max_iter = max_iter*11,
                          coef_drag = coef_drag,
-                         mass = mass,
-                         verbose = FALSE)
+                         mass = mass#,
+                        # verbose = FALSE
+                         )
 
 
 all_res <- bind_rows(base_case$network_dynamics %>% mutate(tstep = tstep, epoch = 0, type = "base"),
@@ -731,7 +732,8 @@ compare_expanded <- c(1, 1.5, Inf) %>% map_df(~{
   expanded_test_drag <- 1.5
   expanded_test_tstep <-0.02
   expanded_test_tol <-0.0
-  expanded_test_iter <- 20000*6
+  expanded_test_iter <- 20000*4
+    
   
   expanded_graph <- readRDS(file.path("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs", "IEEE_118_igraph.rds" )) %>%
     Proportional_Load(., pl_load_val, PowerFlow = "power_flow", Link.Limit = "edge_capacity")
@@ -760,7 +762,7 @@ compare_expanded <- c(1, 1.5, Inf) %>% map_df(~{
                                            tol = expanded_test_tol,
                                            max_iter = expanded_test_iter,
                                            mass = mass,
-                                           verbose = FALSE,
+                                         #  verbose = FALSE,
                                            sparse = FALSE,
                                            coef_drag =expanded_test_drag)
   
@@ -773,28 +775,67 @@ compare_expanded <- c(1, 1.5, Inf) %>% map_df(~{
                                     tol = expanded_test_tol,
                                     max_iter =expanded_test_iter,
                                     mass = mass,
-                                    verbose = FALSE,
+                                  #  verbose = FALSE,
                                     sparse = FALSE,
                                     coef_drag =expanded_test_drag)
   
   
+  expanded_bicomp_converge <- SETS_embedding_expanded(g= expanded_graph, 
+                                                      force =force,
+                                                      flow = flow,
+                                                      distance = distance,
+                                                      edge_name = edge_name,
+                                                      k = "k",
+                                                      tstep = expanded_test_tstep,
+                                                      tol = expanded_test_tol,
+                                                      max_iter = expanded_test_iter ,
+                                                      coef_drag = expanded_test_drag,
+                                                      mass = mass
+  )
+  
   dynamics <- normal_run$network_dynamics
+  print("calculating dynamics for expanded bicomp")
+  
+  dynamics_bicomp <- expanded_bicomp_converge %>%
+    group_by(Iter) %>%
+    summarise(
+              static_force = sum(abs(static_force)),  #static force. The force exerted on the node
+              kinetic_force = sum(abs(0.5*mass*velocity/tstep)), #kinetic_force 
+              potential_energy =1, #sum( 0.5*kvect*(Hvect-dvect)^2),     #spring potential_energy, calculating at end is a nightmare
+              kinetic_energy = sum(0.5*mass*velocity^2) ) %>%
+    mutate(t = Iter*tstep)
   
   #final node elevation
 
 final_state <- full_run %>%
   filter(t == max(t))
+
+bicomp_final_state <- expanded_bicomp_converge %>%
+  filter(t == max(t))
   
   full_run_comp <- full_run %>%
     left_join(., final_state %>% select(node, final_elevation = elevation)) %>%
-    mutate(APE = abs((elevation-final_elevation)/elevation)) 
-  
-  Out <- full_run_comp %>%
+    mutate(APE = abs((elevation-final_elevation)/elevation)) %>%
     mutate(t = round(t,5)) %>%
     group_by(t) %>%
     summarise(MAPE = mean(APE)) %>%
     left_join(dynamics %>% mutate(t = round(t,5)) ) %>%
-    mutate(ec = pl_load_val)
+    mutate(ec = pl_load_val,
+           type = "simple")
+  
+    bicomp_comp <- expanded_bicomp_converge %>%
+    left_join(., bicomp_final_state %>% select(node, final_elevation = elevation)) %>%
+    mutate(APE = abs((elevation-final_elevation)/elevation)) %>%
+    mutate(t = round(t,5)) %>%
+    group_by(t) %>%
+    summarise(MAPE = mean(APE)) %>%
+    left_join(dynamics_bicomp %>% mutate(t = round(t,5)) ) %>%
+    mutate(ec = pl_load_val,
+           type = "bicomp")
+  
+  
+    
+  Out <- bind_rows(full_run_comp, bicomp_comp )
   
   return(Out)
 }
@@ -821,9 +862,20 @@ ggplot(., aes(y = elevation, x = t, colour = as.numeric(node), group = node)) + 
 #The error spikes get compressed as ec goes to infinty
 compare_expanded  %>%
    filter((round(t/tstep)%%100)==0) %>%
-  filter(is.finite(MAPE)) %>%
-  ggplot(aes(x = (Iter), y = log10(MAPE), colour = factor(ec))) + geom_line()+
-  geom_hline(yintercept = -2)
+  filter(is.finite(MAPE))%>%
+ # filter(ec == 1) %>%
+  ggplot(aes(x = (Iter), y = log10(MAPE), colour = factor(ec), group = interaction(ec, type))) + geom_line()+
+  geom_hline(yintercept = -4)
+
+
+compare_expanded  %>%
+   filter((round(t/tstep)%%100)==0) %>%
+  filter(is.finite(MAPE))%>%
+#  filter(Iter>5000) %>%
+  #filter(type =="bicomp") %>%
+  ggplot(aes(x = log10(static_force/2), y = log10(MAPE), colour = factor(ec), group = interaction(ec, type))) + geom_line()+
+  geom_hline(yintercept = -3) #+
+  #facet_grid(~type)
 
 #
 compare_expanded  %>%
@@ -1028,7 +1080,8 @@ floor_df <- node_bicomp_relation %>%
 
 
 test2 <- as.matrix(floor_df)
-
+#This function creates the interaction matrix between nodes in each component.
+#It does this by creating a meta graph where nodes a component-node pairs and links mean a node is the floor or ceiling of another another node. It is effectively a directed matrix but is modelled as undirected
 make_interaction_matrix <- function(target_df){
 #the edges in the meta graph, these are only the articulation nodes
 active_edges <- relative_blocks %>%
@@ -1055,7 +1108,7 @@ non_active_edges <- relative_blocks %>%
 
 #The sparse matrix of the  floor/ceiling interaction
 sparse_matrix_result <- graph_from_data_frame(node_component_pairs,
-                                              directed = F,
+                                              directed = T,
                                               vertices = non_active_edges) %>%
   as_adjacency_matrix() 
 
@@ -1084,101 +1137,119 @@ ggraph(g2, layout = layout_with_fr(g)) +
   ggtitle("IEEE 118 power grid with Fruchtman Reingold projection")
 
 
+tstep <- 0.02
+coef_drag <- 1
 
-```
+plain_converge <- Find_network_balance(g, 
+                         force =force,
+                         flow = flow,
+                         distance = distance,
+                       #  capacity = capacity,
+                         edge_name = edge_name,
+                      #   k = "k",
+                         tstep = tstep,
+                         tol = 0,
+                         max_iter = 1e5,
+                         coef_drag = coef_drag,
+                         mass = mass#,
+                        # verbose = FALSE
+                         )
+
+plain_converge_expanded <- Find_network_balance_expanded(g, 
+                         force =force,
+                         flow = flow,
+                         distance = distance,
+                       #  capacity = capacity,
+                         edge_name = edge_name,
+                      #   k = "k",
+                         tstep = tstep,
+                         tol = 0,
+                         max_iter = 6e4,
+                         coef_drag = coef_drag,
+                         mass = mass#,
+                        # verbose = FALSE
+                         )
+
+plain_bicomp_converge <- SETS_embedding(g, 
+                         force =force,
+                         flow = flow,
+                         distance = distance,
+                         capacity = capacity,
+                         edge_name = edge_name,
+                         k = "k",
+                         tstep = tstep,
+                         tol = 0,
+                         max_iter = 6e4,
+                         coef_drag = coef_drag,
+                         mass = mass#,
+                        # verbose = FALSE
+                         )
 
 
-```{r}
-test_loop_base<- function(){
-  for(i in 1:length(bicomp_shortest_paths$vpath) ){
-  print(i)
-  target_shortest_path <-i
-  
-  component_specific_floor_ceiling_nodes <- bicomp_shortest_paths$vpath[[target_shortest_path]]
-  node_path <- bicomp_shortest_paths$vpath[[target_shortest_path]]
-  edge_path <- bicomp_shortest_paths$epath[[target_shortest_path]] #this may not be necessary and then output can be "vpath" only
-  
-  component_specific_floor_ceiling_nodes_2 <- names(bicomp_shortest_paths$vpath[[target_shortest_path]])[-1]
-  
-  template_nodes_df <-template_nodes_df <-node_bicomp_relation %>%
-    ungroup() %>%
-    group_by(component) %>%
-    mutate(path_component = (name %in% component_specific_floor_ceiling_nodes_2)*1,
-           path_component2 = sum(path_component),
-           target_node_name = names(node_path[length(node_path)]))
-  
-  floor_df <-template_nodes_df  %>%
-    group_by(component) %>%
-    mutate(path_component = (name %in% component_specific_floor_ceiling_nodes_2)*1,
-           path_component2 = sum(path_component),
-           target_node_name = names(node_path[length(node_path)])) %>%
-    ungroup %>%
-    filter(path_component==1, #the node has to be on the shortest path
-           (path_component2>1 | #And the component the node is in needs to have a floor and ceiling
-              id == target_node_name) & # or be the target node
-             is_floor)#and all the nodes need to be floors
-  
-  #This finds the ceilings using the floor dataframe to subset the data
-  ceiling_df <- template_nodes_df %>%
-    filter((component %in% floor_df$component) | #The component has to be one of the components that contains a floor
-             component ==OriginBlock_number, #or it has to be the origin block component
-           id %in% floor_df$id, #And the node id has to be a node that is also a floor
-           !is_floor) #But the node cannot be in a component where it is actually a floor
-  
-  floor_df_2 <- bind_rows(floor_df_2, floor_df)
-  ceiling_df_2 <- bind_rows(ceiling_df_2, ceiling_df)
-  }
-  return(list(floor_df = floor_df_2, ceiling_df = ceiling_df_2))
-}
+expanded_bicomp_converge <- SETS_embedding_expanded(g, 
+                         force =force,
+                         flow = flow,
+                         distance = distance,
+                         edge_name = edge_name,
+                         k = "k",
+                         tstep = tstep,
+                         tol = 0,
+                         max_iter = 1e5 ,
+                         coef_drag = coef_drag,
+                         mass = mass#,
+                        # verbose = FALSE
+                         )
 
 
-test_loop_1<- function(){
-  for(i in 1:length(bicomp_shortest_paths$vpath) ){
-  target_shortest_path <-i
-  
-  component_specific_floor_ceiling_nodes <- bicomp_shortest_paths$vpath[[target_shortest_path]]
-  node_path <- bicomp_shortest_paths$vpath[[target_shortest_path]]
-  edge_path <- bicomp_shortest_paths$epath[[target_shortest_path]] #this may not be necessary and then output can be "vpath" only
-  
-  component_specific_floor_ceiling_nodes_2 <- names(bicomp_shortest_paths$vpath[[target_shortest_path]])[-1]
-  
-  template_nodes_df <-node_bicomp_relation %>%
-    ungroup() %>%
-    group_by(component) %>%
-    mutate(path_component = (name %in% component_specific_floor_ceiling_nodes_2)*1,
-           path_component2 = sum(path_component)) %>%
-    ungroup %>%
-    mutate(target_node_name = names(node_path[length(node_path)]))
-  
-  floor_df <- template_nodes_df  %>%
-    filter(path_component==1, #the node has to be on the shortest path
-           (path_component2>1 | #And the component the node is in needs to have a floor and ceiling
-              id == target_node_name) & # or be the target node
-             is_floor)#and all the nodes need to be floors
-  
-  #This finds the ceilings using the floor dataframe to subset the data
-  ceiling_df <- template_nodes_df %>%
-    filter((component %in% floor_df$component) | #The component has to be one of the components that contains a floor
-             component ==OriginBlock_number, #or it has to be the origin block component
-           id %in% floor_df$id, #And the node id has to be a node that is also a floor
-           !is_floor) #But the node cannot be in a component where it is actually a floor
-  
-  floor_df_2 <- bind_rows(floor_df_2, floor_df)
-  ceiling_df_2 <- bind_rows(ceiling_df_2, ceiling_df)
-  }
-  return(list(floor_df = floor_df_2, ceiling_df = ceiling_df_2))
-}
 
-test_loop_base_df <- test_loop_base()
-test_loop_1_df <- test_loop_1()
 
-time1 <-system.time(test_loop_base_df <- test_loop_base())
-time2 <-system.time(test_loop_1_df <- test_loop_1())
+final_iter <- expanded_bicomp_converge %>%
+  filter(Iter == max(Iter)) %>%
+  mutate(elevation = elevation - mean(elevation)) %>%
+  select(-Iter)
+  
 
-time1/time2
+calc_tension_strain()
 
-all.equal(test_loop_1_df$floor_df, test_loop_base_df$floor_df)
-all.equal(test_loop_1_df$ceiling_df, test_loop_base_df$ceiling_df)
+plain_node_bicomp <-plain_bicomp_converge$node_embeddings %>%
+  rename(component = Reference_ID) %>% select(-component)
+
+plain_node <-plain_converge$node_status
+
+test <- left_join(
+  plain_converge$node_status %>% select(node, elevation),
+ # plain_node_bicomp %>% select(node, elevation_bicomp = elevation), 
+) %>%
+  left_join(.,   final_iter  %>% select(node,  elevation_adjust = elevation)) %>%
+  mutate_if(., is.numeric, function(n){n-mean(n)})
+
+
+
+all_edges <-1:3 %>% map_df(~{
+  
+  calc_tension_strain(g, list(simple = plain_converge$node_status,
+                              bicomp = plain_bicomp_converge$node_embeddings,
+                              test = expanded_bicomp_converge %>% filter(Iter ==max(Iter)))[[.x]], "distance",
+                    capacity = "edge_capacity") %>%
+    mutate(type = c("simple", "bicomp", "test")[.x])
+  })
+
+test %>%
+  pivot_longer(., cols = elevation:elevation_adjust, names_to = "type", values_to = "elevation") %>%
+  group_by(type) %>%
+  mutate(norm_elev = elevation - mean(elevation)) %>%
+  ggplot(aes(x = node, y = norm_elev, colour = type)) + geom_jitter()
+
+
+bind_rows(plain_converge_expanded %>% mutate(type = "plain"),
+          expanded_bicomp_converge %>% mutate(type = "bicomp")) %>%
+  filter((Iter %% 100)==0) %>%
+  filter(#node %in% LETTERS[4:5],
+         Iter <5000)  %>%
+  group_by(Iter, type) %>%
+  mutate(elevation_norm = elevation-mean(elevation)) %>%
+  ggplot(aes(x = (Iter), y = elevation_norm, colour = type, group = interaction(type, node))) + geom_line()
+  
 
 ```
 
