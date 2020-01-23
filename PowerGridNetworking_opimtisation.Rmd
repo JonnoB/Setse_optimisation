@@ -9,7 +9,8 @@ editor_options:
 
 OPtimise the power grid networking attack the grid algortihm
 ```{r}
-packages <- c("tidyverse", "igraph","readr","readxl", "zoo", "stringr","xtable", "rlang", "profvis")
+packages <- c("tidyverse", "igraph","readr","readxl", "zoo", "stringr","xtable", "rlang", "profvis", "microbenchmark",
+              "ggraph")
 
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
@@ -26,6 +27,7 @@ list.files(file.path("/home/jonno/PowerGridNetworking/R"), pattern = ".R", full.
 source(file.path("/home/jonno/ProportionalLoading", "CreateGBase.R"))
 ```
 
+#load network
 ```{r}
 setwd(PLwd)
 
@@ -61,7 +63,7 @@ DeleteOrders <- MultiAttackOrder(g, Target = "Nodes", 100)
 
 
 ```{r}
-testg <- Proportional_Load(g, 1.5)
+test_g <- Proportional_Load(g, 1.5)
 
 #get single deletion order
 DeletionOrder <- DeleteOrders[1,-1] %>% t %>% .[,1]
@@ -108,5 +110,145 @@ start_time_gc <- system.time(base_g_attack_1 <-AttackTheGrid(list(list(g)),
                                                    CascadeMode = TRUE))
  
 start_time_gc/start_time_no_gc
+```
+
+#For loop version
+```{r}
+profvis(   AttackTheGrid(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE),
+           interval = 0.005)
+
+
+profvis(   AttackTheGrid_for_loop(g,
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                  # MinMaxComp = 0,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE),
+           interval = 0.005)
+
+base_case_time <- system.time(base_g_attack_1 <- suppressMessages(AttackTheGrid(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 1000,
+                                                   CascadeMode = TRUE)))
+
+
+for_loop_time  <- system.time(for_loop_version <-  suppressMessages(AttackTheGrid_for_loop(test_g,
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                               #    MinMaxComp = 0,
+                                                   TotalAttackRounds = 1000,
+                                                   CascadeMode = TRUE)))
+
+
+all.equal(base_g_attack_1[[100]][[1]], for_loop_version[[100]][[1]])   
+
+1:length(base_g_attack_1) %>% map_lgl(~{
+all.equal(as_data_frame(base_g_attack_1[[.x]][[1]]),as_data_frame(for_loop_version[[.x]][[1]]))
+  
+})
+
+
+1:length(base_g_attack_1) %>% map_lgl(~{
+all.equal(as_data_frame(base_g_attack_1[[.x]][[1]], what = "vertices"),as_data_frame(for_loop_version[[.x]][[1]], what = "vertices"))
+  
+})
+
+microbenchmark(base = suppressMessages(AttackTheGrid(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 1,
+                                                   CascadeMode = TRUE)),
+             for_loop =  suppressMessages(AttackTheGrid_for_loop(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                               #    MinMaxComp = 0,
+                                                   TotalAttackRounds = 1,
+                                                   CascadeMode = TRUE)))
+```
+
+
+by making the edge transmission matrix externally I can avoid expsensive remaking of the matrix for each sub-component each round
+```{r}
+
+```
+
+
+By calculating the slack ref for each sub component I can remove this from the edge transmission matrix so that only a single matrix inversion needs to be done each round. This is becuase the function union 2 is very slow as is components differ. Both of these functions could be removed, giving a something below 3x speed up.
+
+```{r}
+
+SlackRef <- SlackRefFunc(g, VertexName, Generation = Net_generation)$name
+
+seed(234)
+target_g <- multi_comp_version[[29]][[1]]
+component_list <- components(target_g)
+    component_list$csize
+
+
+ggraph(target_g) +
+   geom_edge_link2( width = 0.7) +
+  scale_edge_colour_viridis() +
+  geom_node_point(aes(colour = as.factor(component_list$membership)))
+  
+test <-  multi_comp_version[[40]][[1]]
+components(test)
+all.equal(as_data_frame(target_g), as_data_frame(test))
+
+test1 <- as_data_frame(target_g)
+test2 <- as_data_frame(test)
+
+multi_comp_time <- system.time((
+  multi_comp_version <- AttackTheGrid_multi_comp(g,
+                                               FixedNodes,
+                                               referenceGrid = NULL,
+                                               TotalAttackRounds = 100,
+                                               CascadeMode = TRUE))
+)
+
+
+profvis(   AttackTheGrid_multi_comp(g,
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                  # MinMaxComp = 0,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE),
+           interval = 0.005)
+
+
+test_g <- delete_vertices(target_g, (1:vcount(target_g))[components(target_g)$membership %in% c(1,3,4)])
+
+g <- test_g
+components(test_g)
+
+plot(test_g)
+
+Power_base <- 
+Power_multi<- Power
+Power_multi[,1]
+
+#The vertices are the same
+#The edges are different, why? why does it start at 30?
+1:40 %>% map(~{
+  all_equal(as_data_frame( multi_comp_version[[.x]][[1]]),as_data_frame(base_g_attack_1[[.x]][[1]]))
+  
+})
+
+all_equal(as_data_frame( multi_comp_version[[.x]][[1]]),as_data_frame(base_g_attack_1[[.x]][[1]]))
+
+all_equal(as_data_frame(g2), as_data_frame(g3))
+
+test2 <- as_data_frame(multi_comp_version[[30]][[1]], what = "vertices")
+test3 <- as_data_frame(base_g_attack_1[[30]][[1]], what = "vertices")
+
+all.equal(test2%>% arrange(name), test3%>% arrange(name))
+
 ```
 

@@ -79,7 +79,7 @@ This is because the youngs modulus is pretty outhtere and who understands it any
 list.files("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs")
 g2 <- readRDS(file.path("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs",  "IEEE_118_igraph.rds" ))#"IEEE_118_igraph.rds"))
 
-g3 <- g2 %>% Proportional_Load(., 3, PowerFlow = "power_flow", Link.Limit = "edge_capacity")
+g3 <- g2 %>% Proportional_Load(., Inf, PowerFlow = "power_flow", Link.Limit = "edge_capacity")
 
       current_graph  <- g3 %>%
         set.edge.attribute(. , "distance", value = 1) %>%
@@ -121,7 +121,7 @@ distance = "distance"
 capacity = "edge_capacity"
 edge_name = "edge_name"
 tstep = 0.02
-tol = 2/1e6
+tol = 2/1e3
 maxIter = 20000
 mass = 1
 verbose = FALSE
@@ -146,24 +146,15 @@ time_test_orig_start <- system.time( test_original_algos<-  Find_network_balance
                                                force =force,
                                                flow = flow,
                                                distance = distance,
-                                               capacity = capacity,
+                                             #  capacity = capacity,
                                                edge_name = edge_name,
                                                tstep = tstep,
                                                tol = tol,
-                                               maxIter = 4e4,
-                                               mass = mass,
-                                               verbose = FALSE))
- test_original_algos <-  Find_network_balance(g = g,
-                                               force =force,
-                                               flow = flow,
-                                               distance = distance,
-                                               capacity = capacity,
-                                               edge_name = edge_name,
-                                               tstep = tstep,
-                                               tol = tol,
-                                               maxIter = maxIter,
-                                               mass = mass,
-                                               verbose = FALSE)
+                                               max_iter = 4e4,
+                                               mass = mass
+                                              # verbose = FALSE
+                                             ))
+
 
  time_test_new_start <- system.time(  test_new_algos<-  Find_network_balance3(g = g,
                                                force =force,
@@ -226,11 +217,13 @@ time_test_orig_start <- system.time( test_original_algos<-  Find_network_balance
                                                edge_name = edge_name,
                                                tstep = tstep,
                                                tol = tol,
-                                               maxIter = 20000*4,
+                                               max_iter = 15,
                                                mass = mass,
-                                               verbose = FALSE,
+                                              # verbose = FALSE,
                                                sparse = F,
-                                               frctmultiplier = 5),
+                                             #  frctmultiplier = 5
+                                             )
+            ,
             interval = 0.005)
     
   all_equal(test_original_algos$NodeList, test_new_algos_1$NodeList)
@@ -727,10 +720,10 @@ df %>%
   slice(rep(1:n(), 4))
 
 
-compare_expanded <- c(1, 1.5, Inf) %>% map_df(~{
+compare_expanded <- c(1, Inf) %>% map_df(~{
   pl_load_val <-.x
-  expanded_test_drag <- 1.5
-  expanded_test_tstep <-0.02
+  expanded_test_drag <- 3
+  expanded_test_tstep <-0.05
   expanded_test_tol <-0.0
   expanded_test_iter <- 20000*4
     
@@ -841,23 +834,6 @@ bicomp_final_state <- expanded_bicomp_converge %>%
 }
 )
 
-test2 <-full_run  %>%
-  filter(t>150) %>%
-  group_by(node) %>%
-  summarise_all(sd)
-
-#convergence of all nodes
-full_run  %>% 
-  filter((round(t/tstep)%%100)==0,
-         #t<10
-       #  node %in% c(1,2)
-         ) %>%
-#  filter(node == 109) %>%
-ggplot(., aes(y = elevation, x = t, colour = as.numeric(node), group = node)) + geom_line() +
-  scale_colour_viridis_c()
-
-
-
 
 #The error spikes get compressed as ec goes to infinty
 compare_expanded  %>%
@@ -865,7 +841,8 @@ compare_expanded  %>%
   filter(is.finite(MAPE))%>%
  # filter(ec == 1) %>%
   ggplot(aes(x = (Iter), y = log10(MAPE), colour = factor(ec), group = interaction(ec, type))) + geom_line()+
-  geom_hline(yintercept = -4)
+  geom_hline(yintercept = -3)+
+  ggtitle("tstep 0.02 coef drag 3 k 10k c 10k ")
 
 
 compare_expanded  %>%
@@ -1138,53 +1115,59 @@ ggraph(g2, layout = layout_with_fr(g)) +
 
 
 tstep <- 0.02
-coef_drag <- 1
+coef_drag <- 1.5
 
-plain_converge <- Find_network_balance(g, 
+
+profvis(plain_converge <- Find_network_balance(g, 
                          force =force,
                          flow = flow,
                          distance = distance,
-                       #  capacity = capacity,
                          edge_name = edge_name,
-                      #   k = "k",
                          tstep = tstep,
                          tol = 0,
-                         max_iter = 1e5,
+                         max_iter = 12e4,
                          coef_drag = coef_drag,
-                         mass = mass#,
-                        # verbose = FALSE
-                         )
+                         mass = mass,
+                         sample = 100
+                         ))
 
 plain_converge_expanded <- Find_network_balance_expanded(g, 
                          force =force,
                          flow = flow,
                          distance = distance,
-                       #  capacity = capacity,
                          edge_name = edge_name,
-                      #   k = "k",
                          tstep = tstep,
                          tol = 0,
                          max_iter = 6e4,
                          coef_drag = coef_drag,
-                         mass = mass#,
-                        # verbose = FALSE
+                         mass = mass
                          )
 
-plain_bicomp_converge <- SETS_embedding(g, 
-                         force =force,
-                         flow = flow,
-                         distance = distance,
-                         capacity = capacity,
-                         edge_name = edge_name,
-                         k = "k",
-                         tstep = tstep,
-                         tol = 0,
-                         max_iter = 6e4,
-                         coef_drag = coef_drag,
-                         mass = mass#,
-                        # verbose = FALSE
-                         )
+profvis(plain_bicomp_converge <- SETS_embedding(g, 
+                                        force =force,
+                                        flow = flow,
+                                        distance = distance,
+                                        capacity = capacity,
+                                        edge_name = edge_name,
+                                        k = "k",
+                                        tstep = tstep,
+                                        tol = 0,
+                                        max_iter = 12e4,
+                                        coef_drag = coef_drag,
+                                        mass = mass,
+                                        sample = 100
+))
 
+test <- plain_bicomp_converge$node_embeddings 
+
+test2 <- bind_cols(plain_converge$node_status %>% 
+                     select(elev_truth = elevation,
+                            static_force_truth = static_force), 
+                   test %>% 
+                     select(elev_est = elevation,
+                            static_force_est = static_force))
+metrics(test2, truth = elev_truth, estimate = elev_est)
+metrics(test2, truth = static_force_truth, estimate = static_force_est)
 
 expanded_bicomp_converge <- SETS_embedding_expanded(g, 
                          force =force,
@@ -1365,6 +1348,79 @@ Rcpp::List flowCalcCpp(const arma::mat &Am, const arma::mat &Cm) {
    return Rcpp::List::create( Rcpp::Named("Imp") = B ,
                            Rcpp::Named("PTDF") = PTDF );
 }')
+
+
+```
+
+#nelder mead
+
+It can be difficult to know how to set the convergence criteria for the sysem aka how to set tstep and coef_drag. It may be possible to automate this using the nelder-mead derivitive free optimisation method
+```{r}
+
+nelder_mead_tstep_drag <- function(par, tol = 2e-3){
+  #This is a simplified version that only takes two arguments the vector of parameters and the system tolerance
+  
+  #get the embeddings for the network
+  #negative time and drag are forbidden
+  emdedded_network <- SETS_embedding(g, 
+                                     force =force,
+                                     flow = flow,
+                                     distance = distance,
+                                     edge_name = edge_name,
+                                     capacity = capacity,
+                                     k = "k",
+                                     tstep = ifelse(par[1]<0,0, par[1] ), 
+                                     tol = tol,
+                                     max_iter = 5e4 ,
+                                     coef_drag = ifelse(par[2]<0,0, par[2] ),
+                                     mass = mass,
+                                     sample = 100
+  )
+  
+  #find the total static force in the network. this is the value to be minimised
+  total_static_force <- sum(abs(emdedded_network$node_embeddings$static_force))
+  
+  #this puts a hard minimum of the convergence tolerance as an output. this is becuase all that matters is that the static
+  #force is smaller than the tolerance not that it is minimised
+  Out <- ifelse(total_static_force < tol, tol, total_static_force)
+  
+  return(Out)
+}
+
+
+test <- optim(par = c(0.01, 4), 
+              nelder_mead_tstep_drag, 
+              method = "L-BFGS-B", 
+              upper = c(0.1, 5),
+              lower = c(0,0),
+              control = list(trace = 3, maxit = 20)
+)
+
+
+emdedded_network <- SETS_embedding(g, 
+                                   force =force,
+                                   flow = flow,
+                                   distance = distance,
+                                   edge_name = edge_name,
+                                   capacity = capacity,
+                                   k = "k",
+                                   tstep = test$par[1],
+                                   tol = tol,
+                                   max_iter = 1e5 ,
+                                   coef_drag = test$par[2],
+                                   mass = mass,
+                                   sample = 100
+)
+
+  
+  test2 <- emdedded_network$node_embeddings
+  log10(sum(abs(test2$static_force)))
+  
+  
+df <- expand.grid(x = 0:100, y = 0:100)
+df$z <- runif(nrow(df))
+# default is compatible with geom_tile()
+ggplot(df, aes(x, y, fill = z)) + geom_raster()
 
 
 ```
