@@ -77,14 +77,14 @@ This is because the youngs modulus is pretty outhtere and who understands it any
 
 "UK_high_voltage.rds" 
 list.files("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs")
-g2 <- readRDS(file.path("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs",  "IEEE_118_igraph.rds" ))#"IEEE_118_igraph.rds"))
+g2 <- readRDS(file.path("/home/jonno/Dropbox/IEEE_Networks/power_grid_graphs",  "IEEE_300_igraph.rds" ))#"IEEE_118_igraph.rds"))
 
 g3 <- g2 %>% Proportional_Load(., Inf, PowerFlow = "power_flow", Link.Limit = "edge_capacity")
 
       current_graph  <- g3 %>%
         set.edge.attribute(. , "distance", value = 1) %>%
         set.edge.attribute(., "Area", value = 1) %>%
-        calc_spring_youngs_modulus(., "power_flow", "edge_capacity", minimum_value = 100, stretch_range = 1000) %>%
+        calc_spring_youngs_modulus(., "power_flow", "edge_capacity", minimum_value = 10000, stretch_range = 1000) %>%
         calc_spring_constant(., E ="E", A = "Area", distance = "distance") %>%
         normalise_dc_load(.,  
                            generation = "generation", 
@@ -151,8 +151,8 @@ time_test_orig_start <- system.time( test_original_algos<-  Find_network_balance
                                                tstep = tstep,
                                                tol = tol,
                                                max_iter = 4e4,
-                                               mass = mass
-                                              # verbose = FALSE
+                                               mass = mass,
+                                             include_edges = TRUE
                                              ))
 
 

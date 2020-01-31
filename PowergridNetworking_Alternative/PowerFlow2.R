@@ -15,21 +15,18 @@
 #' @examples
 #' PowerFlow(g Slackref)
 
-calc_power_flow_multi_comp <- function(g, SlackRef, EdgeName = "Link", VertexName = "name", 
-                                       Net_generation = "BalencedPower", 
-                                       power_flow = "PowerFlow",
-                                       AZero = AZero){
+#Azero is calculated externally
+PowerFlow2 <- function(g, SlackRef, AZero, LineProperties, EdgeName = "Link", VertexName = "name", Net_generation = "BalencedPower", power_flow = "PowerFlow"){
   #Calculates the PowerFlow from a graph that contains the following attributes
   #named edges, edgeweights, a balanced power generation and demand column, Powerflow (will be overwritten)
   #g: an igraph object
   #SlackRef: the node to remove from the calculations to prevent the matrix being singular
+
+  InjectionVector <- get.vertex.attribute(g, name = Net_generation)[get.vertex.attribute(g, name = VertexName)!=SlackRef]
   
-  InjectionVector <- get.vertex.attribute(g, name = Net_generation)[!(get.vertex.attribute(g, name = VertexName) %in% SlackRef)]
- # test <- get.vertex.attribute(g, name = VertexName)[!(get.vertex.attribute(g, name = VertexName) %in% SlackRef)]
-  
-  Power <- ImpPTDF_multi_comp(g,  SlackRef, EdgeName, VertexName, AZero = AZero)$PTDF %*% InjectionVector
-  
+  Power <- ImpPTDF2(g,  SlackRef, AZero = AZero, LineProperties = LineProperties, EdgeName, VertexName, PTDF_only = TRUE)$PTDF %*% InjectionVector
+
   g <- set_edge_attr(g, name = power_flow, value = Power)
-  
+
   return(g)
 }

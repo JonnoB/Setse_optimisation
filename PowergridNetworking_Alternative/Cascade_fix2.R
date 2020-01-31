@@ -30,7 +30,9 @@
 #' edge_limit = "Link.Limit"
 #' )
 
-Cascade_multi_comp <- function(NetworkList,
+#This version of Cascade fix uses the no loops version of componants differ and the edge comparison
+#I am trying to find out why the loop version is not identical when using the original fixed function
+Cascade_fix2 <- function(NetworkList,
                     Iteration = 0,
                     StopCascade = Inf,
                     g0 = NULL,
@@ -40,8 +42,7 @@ Cascade_multi_comp <- function(NetworkList,
                     VertexName = "name",
                     Net_generation = "BalencedPower",
                     power_flow = "PowerFlow",
-                    edge_limit = "Link.Limit",
-                    AZero = AZero
+                    edge_limit = "Link.Limit"
 ){
   #This Function iterates through the network removing edges until there are no further overpower edges to remove
   #This function uses the Bus order to choose the slack reference should this be changed?
@@ -50,14 +51,30 @@ Cascade_multi_comp <- function(NetworkList,
   g <- NetworkList[[length(NetworkList)]]
   
   Iteration <- Iteration + 1
- # print(paste("Cascade iter", Iteration))
   #message(paste("Using previous graph", !is.null(g0)))
   
-  slack_ref_df <-  SlackRefFunc(g, VertexName, Generation = Net_generation)
-
-  #calcualte new power flow
-  g <- calc_power_flow_multi_comp(g, SlackRef =  slack_ref_df$name,  EdgeName, VertexName, Net_generation, power_flow,
-                                   AZero = AZero)
+  #if graph comparison is being used then the process starts here.
+  #This stops needless subgraphs being recalculated then joined.
+  if(!is.null(g0)){
+    #find components that need to be recalculuated
+    RecalcFlow <-  Components_differ_no_loop(g, g0, EdgeName = EdgeName)
+    #create a subgraph of elements that do not need to be recalculated
+    gNochange <- delete.vertices(g, (1:vcount(g))[components(g)$membership %in% RecalcFlow])
+    #create a subgraph of parts that do need to be recalculated
+    g <- delete.vertices(g,( 1:vcount(g))[!(components(g)$membership %in% RecalcFlow)])
+    #  message(paste("components changed since previous", paste(RecalcFlow, collapse = ",")))
+  }
+  
+  
+  #Calculate new power flow over all edges after target has been removed
+  #... This function does not calculate whether the lines are over the limit 
+  g <- CalcOverLimit(g,  EdgeName, VertexName, Net_generation, power_flow = power_flow)
+  
+  #If there is a reference graph that has subcomponents the subcomponents that have been changed by targeting are re-combined into the
+  #rest of the network here
+  if(!is.null(g0)){
+    g <- union2(gNochange, g)
+  }
   
   #Delete Edges that are over the Limit
   
@@ -82,15 +99,13 @@ Cascade_multi_comp <- function(NetworkList,
   
   #g is structurally changed here and becomes g2
   g2 <- delete.edges(g, DeleteEdges$index)
-
   
   #Balence grid after over powered lines and edges are removed
   g2 <- BalencedGenDem(g2, Demand, Generation, OutputVar = Net_generation)
   
   #Checks to see if there are any changes in the edges of the network by component.
   #If all the edges are the same returns TRUE
-  edgesequal <- ecount(g)==ecount(g2)
-
+  edgesequal <-ecount(g2)==ecount(g)
   
   #Terminates the cascade if there are no edges left preventing errors.
   GridCollapsed<- ecount(g2)==0
@@ -101,7 +116,7 @@ Cascade_multi_comp <- function(NetworkList,
     #add the new network into the list
     NetworkList <- c(NetworkList, list(g2))
     #update the list with the new lists created in the cascade
-    NetworkList <- Cascade_multi_comp(NetworkList,
+    NetworkList <- Cascade_fix2(NetworkList,
                            Iteration = Iteration,
                            StopCascade = StopCascade,
                            g0 = g,
@@ -111,11 +126,12 @@ Cascade_multi_comp <- function(NetworkList,
                            VertexName = VertexName ,
                            Net_generation = Net_generation,
                            power_flow = power_flow,
-                           edge_limit = edge_limit,
-                           AZero = AZero
+                           edge_limit = edge_limit
     )
   }
-
+  
+  message(paste("Cascade has completed with", Iteration, "iterations"))
+  
   return(NetworkList)
   
 }

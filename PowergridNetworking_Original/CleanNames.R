@@ -2,12 +2,12 @@
 # This is a helper function to the union2 function however it doesn't seem to improve performance that much
 #I can't really be bothered to test it so it is being kept for some point in the future if necessary
 #
-CleanNames_2<- function(g){
+CleanNames<- function(g){
   #get names of attributes in all graph parts
   gNames <- list(edge_attr = edge_attr_names(g),
                  graph_attr = graph_attr_names(g),
                  vertex_attr = vertex_attr_names(g))
- # print(gNames)
+  print(gNames)
   #identify if the name needs cleaning
   AttrNeedsCleaning <- lapply(gNames,function(n) grepl("(_\\d)$", n ))
   
@@ -16,7 +16,7 @@ CleanNames_2<- function(g){
   
   #create logical vector of names that will be cleaned. This can possibly be combined with previous step
   NewnNames <- lapply(names(gNames), function(n) unique(StemName[[n]][AttrNeedsCleaning[[n]]]))
- # print(NewnNames)
+  print(NewnNames)
   #name new list
   names(NewnNames) <- names(gNames)
   

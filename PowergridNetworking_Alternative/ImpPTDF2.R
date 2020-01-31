@@ -21,49 +21,41 @@
 #   publisher = "Oxford University Press",
 #   pages = "232-240"
 # }
-ImpPTDF_multi_comp <- function(g, SlackRef, EdgeName = "Link", VertexName = "name", AZero = AZero){
+
+#This version calculates Azero externally saving quite a lot of time
+ImpPTDF2 <- function(g, SlackRef, AZero, LineProperties, EdgeName = "Link", VertexName = "name", PTDF_only = FALSE){
   #This is a wrapper for the more interesting parts of the electrical building blocks
-  
+
   #message("Creating Power matrices")
-  
-####
-#
-#Can be taken out of function from here
-#
-#####
-  
-  
+  #edge index is used quite a lot so is assigned here
+  edge_index <- get.edge.attribute(g, "name")
   #subset the original edge transmission matrix to only contain current nodes
-  AZero2 <- AZero[rownames(AZero) %in% get.edge.attribute(g, "name"), colnames(AZero) %in% get.vertex.attribute(g, name = "name")]
+  AZero <-  AZero[rownames(AZero) %in% edge_index, colnames(AZero) %in% get.vertex.attribute(g, name = "name"), drop = FALSE]
+  #AZero <- CreateTransmission(g, EdgeName, VertexName)
   
-  # #remove Slack bus, from each component in the remaining network
+  # #remove Slack bus, usually the largest generator
   #drop = FALSE stops the matrix being converted to a vector when there are only two nodes in the sub-graph
-  A <- AZero2[,!(colnames(AZero2) %in% SlackRef), drop = FALSE]
-  
+  A <- AZero[,colnames(AZero)!=SlackRef, drop = FALSE]
+
   #Create the diagonal matrix of edge impedance
-  C <- LinePropertiesMatrix(g, EdgeName, Weight = "Y")
-  
-####
-#
-# to here
-#
-####
-  
+  C <- LineProperties[edge_index, edge_index] #LinePropertiesMatrix(g, EdgeName, Weight = "Y")
+
+  #message("Inverting the Susceptance matrix") #As this is DC it is the same as the admittance matrix. It is sparse
+
   B <- t(A) %*% C %*% A
   
-  #message("Inverting the Susceptance matrix") #As this is DC it is the same as the admittance matrix. It is sparse
-  
-  Imp <- solve(B) #If the Impedance matrix is inverted again it does not return the original Addmitance matrix due to rounding errors
+  Imp <- base::solve(B) #If the Impedance matrix is inverted again it does not return the original Addmitance matrix due to rounding errors
   #The 0 values of the sparse addmittance matrix are lost and a dense matrix is returned with many very small numbers
   
   #message("Creating the PTDF")
   
   PTDF <- C %*% A %*% Imp
-  
+
+
   Out <-list(Imp, PTDF)
   
   names(Out)<- c("Imp", "PTDF")
-  
+
   return(Out)
-  
+
 }

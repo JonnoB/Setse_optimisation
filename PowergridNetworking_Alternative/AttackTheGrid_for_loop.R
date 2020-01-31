@@ -30,20 +30,20 @@
 #' CumulativeAttacks = NULL)
 
 AttackTheGrid_for_loop <- function(g,
-                          AttackStrategy,
-                          referenceGrid = NULL,
- #                         MinMaxComp = 0.0,
-                          TotalAttackRounds=1000,
-                          CascadeMode = TRUE,
-                          Demand = "Demand",
-                          Generation = "Generation",
-                          EdgeName = "Link",
-                          VertexName = "name",
-                          Net_generation = "BalencedPower",
-                          power_flow = "PowerFlow",
-                          edge_limit = "Link.Limit"
-                          ){
-
+                                   AttackStrategy,
+                                   referenceGrid = NULL,
+                                   #                         MinMaxComp = 0.0,
+                                   TotalAttackRounds=1000,
+                                   CascadeMode = TRUE,
+                                   Demand = "Demand",
+                                   Generation = "Generation",
+                                   EdgeName = "Link",
+                                   VertexName = "name",
+                                   Net_generation = "BalencedPower",
+                                   power_flow = "PowerFlow",
+                                   edge_limit = "Link.Limit"
+){
+  
   
   #I can change the function so that only a graph need be entered and a list of graphs is returned. This is
   #becuase I am no longer recursing the function.
@@ -74,7 +74,7 @@ AttackTheGrid_for_loop <- function(g,
     g <- NetworkList[[CumulativeAttacks]]
     
     g <- g[[length(g)]]
-
+    
     #Remove the desired part of the network.
     gCasc <- AttackStrategy %>% 
       eval_tidy(., data = list(g = g)) #The capture environment contains delete nodes, however the current g is fed in here
@@ -87,24 +87,24 @@ AttackTheGrid_for_loop <- function(g,
     GridCollapsed <- ecount(gCasc)==0
     
     gCasc <- list(gCasc)
-
+    
     
     #This If statement prevents Cascading if theire are no cascadable components
     if(!GridCollapsed){
       
       if(CascadeMode){
         #this returns a list of networks each of the cascade
-        gCasc <- Cascade(NetworkList  = gCasc,
-                         Iteration = 0,
-                         StopCascade = Inf,
-                         g0 = g,
-                         Demand = Demand,
-                         Generation = Generation,
-                         EdgeName = EdgeName,
-                         VertexName = VertexName,
-                         Net_generation = Net_generation,
-                         power_flow = power_flow,
-                         edge_limit = edge_limit
+        gCasc <- Cascade_fix(NetworkList  = gCasc,
+                             Iteration = 0,
+                             StopCascade = Inf,
+                             g0 = g,
+                             Demand = Demand,
+                             Generation = Generation,
+                             EdgeName = EdgeName,
+                             VertexName = VertexName,
+                             Net_generation = Net_generation,
+                             power_flow = power_flow,
+                             edge_limit = edge_limit
         )
         
       }
@@ -139,6 +139,6 @@ AttackTheGrid_for_loop <- function(g,
   }
   
   
-
+  
   return(NetworkList)
 }

@@ -29,21 +29,21 @@
 #' CascadeMode = TRUE,
 #' CumulativeAttacks = NULL)
 
-AttackTheGrid_multi_comp <- function(g,
-                                   AttackStrategy,
-                                   referenceGrid = NULL,
-                                   #                         MinMaxComp = 0.0,
-                                   TotalAttackRounds=1000,
-                                   CascadeMode = TRUE,
-                                   Demand = "Demand",
-                                   Generation = "Generation",
-                                   EdgeName = "Link",
-                                   VertexName = "name",
-                                   Net_generation = "BalencedPower",
-                                   power_flow = "PowerFlow",
-                                   edge_limit = "Link.Limit"
-){
-  
+AttackTheGrid_for_loop_azero <- function(g,
+                          AttackStrategy,
+                          referenceGrid = NULL,
+ #                         MinMaxComp = 0.0,
+                          TotalAttackRounds=1000,
+                          CascadeMode = TRUE,
+                          Demand = "Demand",
+                          Generation = "Generation",
+                          EdgeName = "Link",
+                          VertexName = "name",
+                          Net_generation = "BalencedPower",
+                          power_flow = "PowerFlow",
+                          edge_limit = "Link.Limit"
+                          ){
+
   
   #I can change the function so that only a graph need be entered and a list of graphs is returned. This is
   #becuase I am no longer recursing the function.
@@ -59,26 +59,27 @@ AttackTheGrid_multi_comp <- function(g,
     referenceGrid  <- g
   }
   
+  #precalculation of the line and transmission matrices
+  #This speeds up the PTDF function by reducing expensive operations (Transmission more than LineProperties)
+  AZero <- CreateTransmission(g, EdgeName, VertexName)
+  LineProperties <- LinePropertiesMatrix(g, EdgeName, Weight = "Y")
+  
   FractGC <- 1
   GridCollapsed <- FALSE
   TopoStability <- FALSE
   CumulativeAttacks <- 0
   
-  #pre-calculates the edge_transmission matrix so that it does not need to be repeatedly
-  #calcualted. It is instead simply subsetted
-  AZero <- CreateTransmission(g, EdgeName, VertexName)
-  
   #The stop conditdions are a little over the top
   while (!(CumulativeAttacks==TotalAttackRounds| GridCollapsed| TopoStability)) {
     
     CumulativeAttacks <- CumulativeAttacks + 1
-    
+    #print(CumulativeAttacks)
     #gets the last network in the list
     #gc()
     g <- NetworkList[[CumulativeAttacks]]
     
     g <- g[[length(g)]]
-    
+
     #Remove the desired part of the network.
     gCasc <- AttackStrategy %>% 
       eval_tidy(., data = list(g = g)) #The capture environment contains delete nodes, however the current g is fed in here
@@ -91,29 +92,30 @@ AttackTheGrid_multi_comp <- function(g,
     GridCollapsed <- ecount(gCasc)==0
     
     gCasc <- list(gCasc)
-    
+
     
     #This If statement prevents Cascading if theire are no cascadable components
     if(!GridCollapsed){
       
       if(CascadeMode){
         #this returns a list of networks each of the cascade
-        gCasc <- Cascade_multi_comp(NetworkList  = gCasc,
+        gCasc <- Cascade_loop_azero(NetworkList  = gCasc,
                          Iteration = 0,
                          StopCascade = Inf,
                          g0 = g,
+                         AZero = AZero,
+                         LineProperties = LineProperties,
                          Demand = Demand,
                          Generation = Generation,
                          EdgeName = EdgeName,
                          VertexName = VertexName,
                          Net_generation = Net_generation,
                          power_flow = power_flow,
-                         edge_limit = edge_limit,
-                         AZero =AZero
+                         edge_limit = edge_limit
         )
         
       }
-   #commenting out as it is annoying   
+      
       message(paste("Attack ",CumulativeAttacks, " Nodes Remaining", vcount(gCasc[[length(gCasc)]])))
       
     } else{
@@ -138,13 +140,12 @@ AttackTheGrid_multi_comp <- function(g,
     #Checks to see if the topology of the network is unchanged.
     #If this is TRUE then nothing is being removed and the process can stop
     TopoStability <- (vcount(gCascLast) == vcount(g) &   ecount(gCascLast) == ecount(g))
-  #  print(CumulativeAttacks==TotalAttackRounds);print(GridCollapsed); print(TopoStability)
-
-     #FractGC <-ifelse(is.finite(MaxComp),MaxComp/vcount(referenceGrid), 0)
+    
+    #FractGC <-ifelse(is.finite(MaxComp),MaxComp/vcount(referenceGrid), 0)
     
   }
   
   
-  
+
   return(NetworkList)
 }

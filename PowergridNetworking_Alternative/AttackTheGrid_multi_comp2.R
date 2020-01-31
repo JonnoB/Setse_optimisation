@@ -29,7 +29,7 @@
 #' CascadeMode = TRUE,
 #' CumulativeAttacks = NULL)
 
-AttackTheGrid_multi_comp <- function(g,
+AttackTheGrid_multi_comp2 <- function(g,
                                    AttackStrategy,
                                    referenceGrid = NULL,
                                    #                         MinMaxComp = 0.0,
@@ -67,7 +67,6 @@ AttackTheGrid_multi_comp <- function(g,
   #pre-calculates the edge_transmission matrix so that it does not need to be repeatedly
   #calcualted. It is instead simply subsetted
   AZero <- CreateTransmission(g, EdgeName, VertexName)
-  
   #The stop conditdions are a little over the top
   while (!(CumulativeAttacks==TotalAttackRounds| GridCollapsed| TopoStability)) {
     
@@ -98,7 +97,7 @@ AttackTheGrid_multi_comp <- function(g,
       
       if(CascadeMode){
         #this returns a list of networks each of the cascade
-        gCasc <- Cascade_multi_comp(NetworkList  = gCasc,
+        gCasc <- Cascade_multi_comp2(NetworkList  = gCasc,
                          Iteration = 0,
                          StopCascade = Inf,
                          g0 = g,
@@ -110,6 +109,7 @@ AttackTheGrid_multi_comp <- function(g,
                          power_flow = power_flow,
                          edge_limit = edge_limit,
                          AZero =AZero
+                        
         )
         
       }

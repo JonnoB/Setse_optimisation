@@ -21,10 +21,15 @@ basewd <- "/home/jonno/Dropbox/Jonathan_Bourne_Phd_Folder"
 list.files(file.path("/home/jonno/Useful_PhD__R_Functions"), pattern = ".R", full.names = T) %>%
   walk(~source(.x))
 
-list.files(file.path("/home/jonno/PowerGridNetworking/R"), pattern = ".R", full.names = T) %>%
+list.files(file.path("/home/jonno/Setse_optimisation/PowergridNetworking_Alternative"), pattern = ".R", full.names = T) %>%
   walk(~source(.x))
 
+list.files(file.path("/home/jonno/Setse_optimisation/PowergridNetworking_Original"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+basewd <- "/home/jonno/Dropbox/Jonathan_Bourne_Phd_Folder"
 source(file.path("/home/jonno/ProportionalLoading", "CreateGBase.R"))
+rm(GenerationData); rm(LocalAssetData);rm(trans1);rm(trans2);rm(TransportData);rm(VertexMetaData)
 ```
 
 #load network
@@ -37,7 +42,7 @@ g <- RemoveDeadEnds(gbase)
 #saveRDS(gbase, file.path("/home/jonno/Dropbox/AWS_Simulation_Files","gbase.rds"))
 
 #provide correct power flow
-g <- g %>%
+g<- g%>%
   PowerFlow(., SlackRef = get.vertex.attribute(., "name")[which.min(get.vertex.attribute(., "Bus.Order"))] )
 
 
@@ -54,201 +59,409 @@ DeleteOrders <- MultiAttackOrder(g, Target = "Nodes", 100)
 #saveRDS(DeleteOrders, file.path(PLwd, filename))
 }
 
-```
-
-```{r}
-
-```
-
-
-
-```{r}
-test_g <- Proportional_Load(g, 1.5)
-
-#get single deletion order
 DeletionOrder <- DeleteOrders[1,-1] %>% t %>% .[,1]
-
+g<-g
  FixedNodes <- quo(FixedStrategyAttack(g, DeletionOrder))
-    #suppres attack the grid messages
-profvis(   base_g_attack_1 <-AttackTheGrid(list(list(g)),
-                                                   FixedNodes,
-                                                   referenceGrid = NULL,
-                                                   MinMaxComp = 0,
-                                                   TotalAttackRounds = 1,
-                                                   CascadeMode = TRUE),
-           interval = 0.005)
-   
-   
-   
-profvis(      base_g_attac_10 <-AttackTheGrid(list(list(g)),
-                                                   FixedNodes,
-                                                   referenceGrid = NULL,
-                                                   MinMaxComp = 0,
-                                                   TotalAttackRounds = 100,
-                                                   CascadeMode = TRUE))
-      
-profvis(         PL15_g_attack_1 <-AttackTheGrid(list(list(g)),
-                                                   FixedNodes,
-                                                   referenceGrid = NULL,
-                                                   MinMaxComp = 0,
-                                                   TotalAttackRounds = 1,
-                                                   CascadeMode = TRUE))
 
-start_time_no_gc <- system.time(base_g_attack_1 <- suppressMessages(AttackTheGrid(list(list(g)),
-                                                   FixedNodes,
-                                                   referenceGrid = NULL,
-                                                   MinMaxComp = 0,
-                                                   TotalAttackRounds = 1000,
-                                                   CascadeMode = TRUE)))
-
-
-start_time_gc <- system.time(base_g_attack_1 <-AttackTheGrid(list(list(g)),
-                                                   FixedNodes,
-                                                   referenceGrid = NULL,
-                                                   MinMaxComp = 0,
-                                                   TotalAttackRounds = 1000,
-                                                   CascadeMode = TRUE))
- 
-start_time_gc/start_time_no_gc
 ```
 
-#For loop version
+#Basic timings
+The original versions of the function with minor adjustments
+They ALL HAVE TO BE IDENTICAL
 ```{r}
+
+# Don't run this it is useless. value only in demonstrating it is useless becuase ot the recursion
 profvis(   AttackTheGrid(list(list(g)),
                                                    FixedNodes,
                                                    referenceGrid = NULL,
                                                    MinMaxComp = 0,
-                                                   TotalAttackRounds = 100,
+                                                   TotalAttackRounds = 10,
                                                    CascadeMode = TRUE),
            interval = 0.005)
 
+profvis(   AttackTheGrid_fix(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 10,
+                                                   CascadeMode = TRUE),
+           interval = 0.005)
 
 profvis(   AttackTheGrid_for_loop(g,
                                                    FixedNodes,
                                                    referenceGrid = NULL,
-                                                  # MinMaxComp = 0,
-                                                   TotalAttackRounds = 100,
+                                                   TotalAttackRounds = 10,
                                                    CascadeMode = TRUE),
            interval = 0.005)
 
-base_case_time <- system.time(base_g_attack_1 <- suppressMessages(AttackTheGrid(list(list(g)),
+
+#The true original version of the function
+time_base <- system.time(base_attack <- suppressMessages(AttackTheGrid(list(list(g)),
                                                    FixedNodes,
                                                    referenceGrid = NULL,
                                                    MinMaxComp = 0,
-                                                   TotalAttackRounds = 1000,
+                                                   TotalAttackRounds = 100,
                                                    CascadeMode = TRUE)))
 
-
-for_loop_time  <- system.time(for_loop_version <-  suppressMessages(AttackTheGrid_for_loop(test_g,
+#The speed up technique that messed all this up is removed
+time_base_raw <- system.time(base_raw <- suppressMessages(AttackTheGrid_raw(list(list(g)),
                                                    FixedNodes,
                                                    referenceGrid = NULL,
-                                               #    MinMaxComp = 0,
-                                                   TotalAttackRounds = 1000,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 100,
                                                    CascadeMode = TRUE)))
 
+#The original version with components differ fixed
+#There appears to be no differencce between the two
+#If Cascade fix uses "ecount(g2)==ecount(g)" instead of "all(!Components_differ_fix(g2, g, EdgeName = EdgeName))" they are still identical
+time_base_fix <- system.time(base_fix <-(AttackTheGrid_fix(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE)))
 
-all.equal(base_g_attack_1[[100]][[1]], for_loop_version[[100]][[1]])   
+#base fix and base fix 2 are identical... why is loop different!?
+time_base_fix2 <- system.time(base_fix2 <-suppressMessages(AttackTheGrid_fix2(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE)))
+#uses the fixed components difffer function
+#This this makes it different to the original. If I substitute in Cascade instead of Cascade fix they are identical..
+#which doesn't make any sense.
+time_loop <- system.time(base_loop <-suppressMessages(AttackTheGrid_for_loop(g,
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE)))
 
-1:length(base_g_attack_1) %>% map_lgl(~{
-all.equal(as_data_frame(base_g_attack_1[[.x]][[1]]),as_data_frame(for_loop_version[[.x]][[1]]))
+time_loop2 <- system.time(base_loop2 <-suppressMessages(AttackTheGrid_for_loop2(g,
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE)))
+ 
+
+#Why are they not different from the base with incorrect components differ
+
+#base versus fix
+1:length(base_attack) %>% map_lgl(~{
+isTRUE(all.equal(as_data_frame(base_attack[[.x]][[1]]) %>% arrange(from, to), 
+          as_data_frame(base_fix[[.x]][[1]]) %>% arrange(from, to)))
+  
+})
+
+#fix versus loop
+1:length(base_attack) %>% map_lgl(~{
+isTRUE(all.equal(as_data_frame(base_fix[[.x]][[1]]) %>% arrange(from, to), 
+          as_data_frame(base_loop[[.x]][[1]]) %>% arrange(from, to)))
   
 })
 
 
-1:length(base_g_attack_1) %>% map_lgl(~{
-all.equal(as_data_frame(base_g_attack_1[[.x]][[1]], what = "vertices"),as_data_frame(for_loop_version[[.x]][[1]], what = "vertices"))
+#fix vs fix 2
+#base fix 2 not equal
+1:length(base_fix) %>% map_lgl(~{
+isTRUE(all.equal(as_data_frame(base_fix[[.x]][[1]]) %>% arrange(from, to), 
+          as_data_frame(base_fix2[[.x]][[1]]) %>% arrange(from, to)))
   
 })
 
-microbenchmark(base = suppressMessages(AttackTheGrid(list(list(g)),
+#loop1 vs 2: they are equal
+1:length(base_loop) %>% map_lgl(~{
+isTRUE(all.equal(as_data_frame(base_loop[[.x]][[1]]) %>% arrange(from, to), 
+          as_data_frame(base_loop2[[.x]][[1]]) %>% arrange(from, to)))
+  
+})
+
+
+#on the 75 iteration the first element of the cascade is identical.
+#but the loop version does 5 more iterations for a total of 10 whilse base stops... why?
+length(base_attack[[75]])
+length(base_loop[[75]])
+test1 <- as_data_frame(base_attack[[75]][[5]])
+test2 <- as_data_frame(base_loop[[75]][[5]])
+all_equal(test1, test2)
+
+#which elements have cascades?
+cascade_size_df<- 1:length(base_fix) %>% map_df(~{
+tibble(attack_no = .x, 
+       base = length(base_fix[[.x]]),
+       loop = length(base_loop[[.x]]))
+  
+})
+
+#the number of components changes from 3 to four at the 29-30 cross over
+#
+components_df <-1:length(base_fix) %>% map_df(~{
+tibble(iter = .x,
+   base = components(base_fix[[.x]][[1]])$no,
+   boop = components(base_loop[[.x]][[1]])$no
+   )
+  
+})
+
+#There are only two elements in 29 so it is easy to use when comparing components
+1:length(base_fix[[29]]) %>% map_dbl(~{components(base_fix[[29]][[.x]])$no})
+
+```
+
+
+#Azero
+
+AZero and Line components are precalculated outside the loop then passed inside. This speeds up the process as the creation of AZero is expensive due to the spread operation. CreateTransmission is cheap but as it is easy to move outside and the process is so much faster now, it is actually worth it saving upto half a second.
+
+A call to components differ is replaced with checking the line counts are the same. This saves a lot of time
+
+```{r}
+
+#Pre- calculate AZero and the LineProperties matrix and then subset in IMPTDF
+time_loop_azero  <- system.time(loop_azero <-  suppressMessages(AttackTheGrid_for_loop_azero(g,
                                                    FixedNodes,
                                                    referenceGrid = NULL,
-                                                   MinMaxComp = 0,
-                                                   TotalAttackRounds = 1,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE)))
+
+#Identical to base
+1:length(base_fix) %>% map_lgl(~{
+isTRUE(all.equal(as_data_frame(base_fix[[.x]][[1]]) %>% arrange(from, to), 
+          as_data_frame(loop_azero[[.x]][[1]]) %>% arrange(from, to)))
+  
+})
+
+profvis(   suppressMessages(AttackTheGrid_for_loop_azero(g,
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                  # MinMaxComp = 0,
+                                                   TotalAttackRounds = 100,
                                                    CascadeMode = TRUE)),
-             for_loop =  suppressMessages(AttackTheGrid_for_loop(list(list(g)),
+           interval = 0.005)
+
+```
+
+
+#Components differ 2
+
+First a single call to components differ is removed. 
+This almost hald the time it takes to execute the function. This is because components differ is very expensive and all you need to know whether the cascade will continue is to see if the edges in the two graphs are different.
+```{r}
+ 
+#a call to components 2 is removed
+time_loop2  <- system.time(loop_components2 <-  suppressMessages(AttackTheGrid_for_loop2(g,
                                                    FixedNodes,
                                                    referenceGrid = NULL,
-                                               #    MinMaxComp = 0,
-                                                   TotalAttackRounds = 1,
+                                                   TotalAttackRounds = 100,
                                                    CascadeMode = TRUE)))
-```
 
-
-by making the edge transmission matrix externally I can avoid expsensive remaking of the matrix for each sub-component each round
-```{r}
-
-```
-
-
-By calculating the slack ref for each sub component I can remove this from the edge transmission matrix so that only a single matrix inversion needs to be done each round. This is becuase the function union 2 is very slow as is components differ. Both of these functions could be removed, giving a something below 3x speed up.
-
-```{r}
-
-SlackRef <- SlackRefFunc(g, VertexName, Generation = Net_generation)$name
-
-seed(234)
-target_g <- multi_comp_version[[29]][[1]]
-component_list <- components(target_g)
-    component_list$csize
-
-
-ggraph(target_g) +
-   geom_edge_link2( width = 0.7) +
-  scale_edge_colour_viridis() +
-  geom_node_point(aes(colour = as.factor(component_list$membership)))
-  
-test <-  multi_comp_version[[40]][[1]]
-components(test)
-all.equal(as_data_frame(target_g), as_data_frame(test))
-
-test1 <- as_data_frame(target_g)
-test2 <- as_data_frame(test)
-
-multi_comp_time <- system.time((
-  multi_comp_version <- AttackTheGrid_multi_comp(g,
-                                               FixedNodes,
-                                               referenceGrid = NULL,
-                                               TotalAttackRounds = 100,
-                                               CascadeMode = TRUE))
-)
-
-
-profvis(   AttackTheGrid_multi_comp(g,
+profvis(   suppressMessages(AttackTheGrid_for_loop2(g,
                                                    FixedNodes,
                                                    referenceGrid = NULL,
                                                   # MinMaxComp = 0,
                                                    TotalAttackRounds = 100,
-                                                   CascadeMode = TRUE),
+                                                   CascadeMode = TRUE)),
            interval = 0.005)
 
-
-test_g <- delete_vertices(target_g, (1:vcount(target_g))[components(target_g)$membership %in% c(1,3,4)])
-
-g <- test_g
-components(test_g)
-
-plot(test_g)
-
-Power_base <- 
-Power_multi<- Power
-Power_multi[,1]
-
-#The vertices are the same
-#The edges are different, why? why does it start at 30?
-1:40 %>% map(~{
-  all_equal(as_data_frame( multi_comp_version[[.x]][[1]]),as_data_frame(base_g_attack_1[[.x]][[1]]))
+#not identical to base.
+1:length(base_fix) %>% map_lgl(~{
+isTRUE(all.equal(as_data_frame(base_fix[[.x]][[1]]) %>% arrange(from, to), 
+          as_data_frame(loop_components2[[.x]][[1]]) %>% arrange(from, to)))
   
 })
 
-all_equal(as_data_frame( multi_comp_version[[.x]][[1]]),as_data_frame(base_g_attack_1[[.x]][[1]]))
+g_temp <- g
 
-all_equal(as_data_frame(g2), as_data_frame(g3))
+g0 <- loop_components2[[29]][[1]]
+g <- loop_components2[[29]][[2]]
 
-test2 <- as_data_frame(multi_comp_version[[30]][[1]], what = "vertices")
-test3 <- as_data_frame(base_g_attack_1[[30]][[1]], what = "vertices")
+#The loopless version is unsurpsingly faster
+microbenchmark(
+  original = Components_differ(g, g0, EdgeName = "Link"),
+  v2 = Components_differ2(g, g0, EdgeName = "Link"),
+  no_loop = Components_differ_no_loop(g, g0, EdgeName = "Link"))
 
-all.equal(test2%>% arrange(name), test3%>% arrange(name))
+profvis(microbenchmark(
+  original = Components_differ_fix(g, g0, EdgeName = "Link"),
+  v2 = Components_differ2(g, g0, EdgeName = "Link"),
+  no_loop = Components_differ_no_loop(g, g0, EdgeName = "Link")))
 
+
+
+g <-g_temp; rm(g_temp); rm(g0)
+
+#replace components differ with the loopless version
+time_compdiff_loopless <- system.time(loopless_compsdiff <- suppressMessages(AttackTheGrid_compdiff_noloop(g,
+                              FixedNodes,
+                              referenceGrid = NULL,
+                              TotalAttackRounds = 100,
+                              CascadeMode = TRUE)))
+
+
+time_compdiff_loopless2 <- system.time(loopless_compsdiff2 <- suppressMessages(AttackTheGrid_compdiff_noloop2(g,
+                              FixedNodes,
+                              referenceGrid = NULL,
+                              TotalAttackRounds = 100,
+                              CascadeMode = TRUE)))
+
+profvis(   suppressMessages(AttackTheGrid_compdiff_noloop2(g,
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                  # MinMaxComp = 0,
+                                                   TotalAttackRounds = 1000,
+                                                   CascadeMode = TRUE)),
+           interval = 0.005)
+
+
+
+c("loopless_compsdiff2")  %>% map_df(~{
+
+  contains_same_edges(base_raw, get(.x)) %>%
+    mutate(version = .x)
+   
+}) %>%
+  group_by(version) %>%
+  summarise(edges_equal = all((edges_equal)))
+
+test <-   contains_same_edges(base_raw, loopless_compsdiff2) 
+
+```
+
+
+#Test the validity of the algorithms
+
+This tests whether the algos are the same as the raw version.
+It is down here as there were a lot of horrible discoveries in this debugging.
+What I found was there was a lot of internal consistancy in between certain groups of functions but not overall.
+By stripping out all the "no change" elements I could run a much slower analysis but it would be correct. I then compared all the algos against that.
+What I found was that my initial fix was also incorrect. But that the much simpler (and faster) no loop version was correct.
+This mean that all my other speed up algos where consistant but incorrect. However the noloop version which has all the other speedup tech switches the components differ algo is correct.]
+
+In some ways this shows the importance of modular building and also the value of cross functional comparison. Things can be wrong even whilst being right.
+```{r}
+
+contains_same_edges <- function(NetList1, NetList2){
+         nm <-deparse(substitute(NetList2))
+        
+  components_df <-1:length(NetList1) %>% map_df(~{
+#print(.x)
+    g1 <- NetList1[[.x]][[1]]
+    g2 <- NetList2[[.x]][[1]]
+    
+    tibble(iter = .x,
+           edges_equal = isTRUE(all_equal(as_data_frame(g1) %>% select(Link), as_data_frame(g2) %>% select(Link))),
+           ref_edges = ecount(g1),
+           alt_edges = ecount(g2),
+           ref_comps = components(g1)$no,
+           alt_comps = components(g2)$no
+    )
+    
+  })
+  
+}
+
+
+c("loop_azero", "loop_components2", "loopless_compsdiff")
+
+test <- contains_same_edges(base_fix, base_fix2)
+
+test <- c("loop_azero", "loop_components2", "loopless_compsdiff",
+           "loopless_compsdiff2", ls(pattern = "^base_"))  %>% map_df(~{
+  
+  contains_same_edges(base_raw, get(.x)) %>%
+    mutate(version = .x)
+   
+})
+
+
+test %>%
+  group_by(version) %>%
+  summarise(edges_equal = all((edges_equal)))
+
+
+test2 <-test %>%
+  filter(version == "loopless_compsdiff")
+
+
+```
+
+#Multi-component
+
+This looks at whether calculating the the 
+
+```{r}
+
+multi_comp_time  <- system.time(multi_comp_version <-  suppressMessages(AttackTheGrid_multi_comp(g,
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE)))
+#The simple multi-component version is actually relatively fast and also identical to the raw version
+multi_comp_time2  <- system.time(multi_comp_version2 <-  suppressMessages(AttackTheGrid_multi_comp2(g,
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE)))
+
+c("multi_comp_version", "multi_comp_version2")  %>% map_df(~{
+  
+  contains_same_edges(base_raw, get(.x)) %>%
+    mutate(version = .x)
+   
+}) %>%
+  group_by(version) %>%
+  summarise(edges_equal = all((edges_equal)))
+
+
+profvis(multi_comp_version <-  suppressMessages(AttackTheGrid_multi_comp2(g,
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE)))
+
+```
+
+#final check
+components differ loopless 2 seems to be the best option
+```{r}
+
+time_compdiff_loopless2 <- system.time(loopless_compsdiff2 <- suppressMessages(AttackTheGrid_compdiff_noloop2(g,
+                              FixedNodes,
+                              referenceGrid = NULL,
+                              TotalAttackRounds = 1000,
+                              CascadeMode = TRUE)))
+
+time_base_raw_full <- system.time(base_raw_full <- suppressMessages(AttackTheGrid_raw(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 1000,
+                                                   CascadeMode = TRUE)))
+
+
+time_base_attack_full <- system.time(base_attack <- suppressMessages(AttackTheGrid(list(list(g)),
+                                                   FixedNodes,
+                                                   referenceGrid = NULL,
+                                                   MinMaxComp = 0,
+                                                   TotalAttackRounds = 1000,
+                                                   CascadeMode = TRUE)))
+
+library("compiler")
+cmp_test <- cmpfun(AttackTheGrid_compdiff_noloop2)
+
+time_compdiff_cmp <- system.time(loopless_cmp <- suppressMessages(cmp_test(g,
+                              FixedNodes,
+                              referenceGrid = NULL,
+                              TotalAttackRounds = 1000,
+                              CascadeMode = TRUE)))
+
+
+#They are all the same
+test <- contains_same_edges(base_raw_full, loopless_compsdiff2)
+
+#speed increase 8 times user and 18 times elapsed
+time_base_raw_full/time_compdiff_loopless2
+
+time_base_attack_full/time_compdiff_loopless2
 ```
 
