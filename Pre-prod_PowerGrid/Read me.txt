@@ -1,0 +1,4 @@
+Read me
+
+This folder is a staging post for the new functions to be tested before being added into the packge.
+It is to make sure they all work as expected whilst having the correct names etc, to prevent unforseen events or errors.

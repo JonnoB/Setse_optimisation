@@ -60,9 +60,13 @@ DeleteOrders <- MultiAttackOrder(g, Target = "Nodes", 100)
 }
 
 DeletionOrder <- DeleteOrders[1,-1] %>% t %>% .[,1]
-g<-g
  FixedNodes <- quo(FixedStrategyAttack(g, DeletionOrder))
+ 
+  FixedNodes2 <- quo(FixedStrategyAttack2(g, DeletionOrder))
 
+  microbenchmark(v1 = FixedStrategyAttack(g, DeletionOrder),
+                 v2 = FixedStrategyAttack2(g, DeletionOrder))
+  
 ```
 
 #Basic timings
@@ -299,17 +303,25 @@ time_compdiff_loopless <- system.time(loopless_compsdiff <- suppressMessages(Att
 
 
 time_compdiff_loopless2 <- system.time(loopless_compsdiff2 <- suppressMessages(AttackTheGrid_compdiff_noloop2(g,
-                              FixedNodes,
+                              FixedNodes2,
                               referenceGrid = NULL,
                               TotalAttackRounds = 100,
                               CascadeMode = TRUE)))
 
-profvis(   suppressMessages(AttackTheGrid_compdiff_noloop2(g,
+profvis(   AttackTheGrid_compdiff_noloop2(g,
                                                    FixedNodes,
                                                    referenceGrid = NULL,
                                                   # MinMaxComp = 0,
                                                    TotalAttackRounds = 1000,
-                                                   CascadeMode = TRUE)),
+                                                   CascadeMode = TRUE),
+           interval = 0.005)
+
+profvis(AttackTheGrid_compdiff_noloop2(g,
+                                                   FixedNodes2,
+                                                   referenceGrid = NULL,
+                                                  # MinMaxComp = 0,
+                                                   TotalAttackRounds = 1000,
+                                                   CascadeMode = TRUE),
            interval = 0.005)
 
 
@@ -421,16 +433,90 @@ profvis(multi_comp_version <-  suppressMessages(AttackTheGrid_multi_comp2(g,
 
 ```
 
+
+#fixed strategy in function
+At the moment the function that calculates which node or edge to be removed is calculated outside the function but evaluated inside.
+By removing this the function will be less flexible but may be faster. A reason for this is that the whole function can be compiled, which flexible code prevents.
+
+```{r}
+time_fixed_attack <- system.time(fixed_attack<- AttackTheGrid_List_fixed_attack(g,
+                                        DeletionOrder,
+                                        Target = "Nodes",
+                                        Number = 1,
+                                        referenceGrid = NULL,
+                                        TotalAttackRounds = 100,
+                                        CascadeMode = TRUE))
+
+c("test")  %>% map_df(~{
+  
+  contains_same_edges(base_raw, get(.x)) %>%
+    mutate(version = .x)
+   
+}) %>%
+  group_by(version) %>%
+  summarise(edges_equal = all((edges_equal)))
+
+
+profvis(fixed_attack<- AttackTheGrid_List_fixed_attack(g,
+                                        DeletionOrder,
+                                        Target = "Nodes",
+                                        Number = 1,
+                                        referenceGrid = NULL,
+                                        TotalAttackRounds = 100,
+                                        CascadeMode = TRUE))
+
+
+cmp_test <- cmpfun(AttackTheGrid_List_fixed_attack)
+
+time_compdiff_cmp <- system.time(loopless_cmp <- suppressMessages(cmp_test(g,
+                              DeletionOrder,
+                                        Target = "Nodes",
+                                        Number = 1,
+                                        referenceGrid = NULL,
+                                        TotalAttackRounds = 100,
+                                        CascadeMode = TRUE)))
+
+
+microbenchmark(full = AttackTheGrid_List_fixed_attack(g,
+                                        DeletionOrder,
+                                        Target = "Nodes",
+                                        Number = 1,
+                                        referenceGrid = NULL,
+                                        TotalAttackRounds = 100,
+                                        CascadeMode = TRUE),
+               comp = AttackTheGrid_compdiff_noloop2(g,
+                                                   FixedNodes2,
+                                                   referenceGrid = NULL,
+                                                  # MinMaxComp = 0,
+                                                   TotalAttackRounds = 100,
+                                                   CascadeMode = TRUE),
+               times = 30)
+
+
+
+```
+
+
 #final check
 components differ loopless 2 seems to be the best option
 ```{r}
+rm(list=lsf.str())
 
-time_compdiff_loopless2 <- system.time(loopless_compsdiff2 <- suppressMessages(AttackTheGrid_compdiff_noloop2(g,
-                              FixedNodes,
-                              referenceGrid = NULL,
-                              TotalAttackRounds = 1000,
-                              CascadeMode = TRUE)))
+#load the base and alternative functions
+list.files(file.path("/home/jonno/Useful_PhD__R_Functions"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
 
+list.files(file.path("/home/jonno/Setse_optimisation/PowergridNetworking_Alternative"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+list.files(file.path("/home/jonno/Setse_optimisation/PowergridNetworking_Original"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+#choose deleteion order and generate the fixed nodes function
+DeletionOrder <- DeleteOrders[1,-1] %>% t %>% .[,1]
+FixedNodes <- quo(FixedStrategyAttack(g, DeletionOrder))
+
+#run the raw version
 time_base_raw_full <- system.time(base_raw_full <- suppressMessages(AttackTheGrid_raw(list(list(g)),
                                                    FixedNodes,
                                                    referenceGrid = NULL,
@@ -446,22 +532,28 @@ time_base_attack_full <- system.time(base_attack <- suppressMessages(AttackTheGr
                                                    TotalAttackRounds = 1000,
                                                    CascadeMode = TRUE)))
 
-library("compiler")
-cmp_test <- cmpfun(AttackTheGrid_compdiff_noloop2)
+#remove all function
+rm(list=lsf.str())
+#load the pre-prod functions
+list.files(file.path("/home/jonno/Setse_optimisation/Pre-prod_PowerGrid"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+rm(FixedNodes)
+FixedNodes2 <- quo(FixedStrategyAttack(g, DeletionOrder))
 
-time_compdiff_cmp <- system.time(loopless_cmp <- suppressMessages(cmp_test(g,
-                              FixedNodes,
+time_upgraded <- system.time(base_attack_upgraded <-AttackTheGrid_List(g,
+                              FixedNodes2,
                               referenceGrid = NULL,
                               TotalAttackRounds = 1000,
-                              CascadeMode = TRUE)))
+                              CascadeMode = TRUE))
+
 
 
 #They are all the same
-test <- contains_same_edges(base_raw_full, loopless_compsdiff2)
+test <- contains_same_edges(base_raw_full, base_attack_upgraded)
 
 #speed increase 8 times user and 18 times elapsed
-time_base_raw_full/time_compdiff_loopless2
+time_base_raw_full/time_upgraded
 
-time_base_attack_full/time_compdiff_loopless2
+time_base_attack_full/time_upgraded
 ```
 

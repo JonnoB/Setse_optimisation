@@ -17,7 +17,7 @@
 #' PowerFlow(g Slackref)
 
 #Azero is calculated externally
-PowerFlow3 <- function(g, AZero, LineProperties, 
+PowerFlow <- function(g, AZero, LineProperties, 
                        EdgeName = "Link", 
                        VertexName = "name", 
                        Net_generation = "BalencedPower", 
@@ -44,7 +44,7 @@ PowerFlow3 <- function(g, AZero, LineProperties,
           
           InjectionVector <- get.vertex.attribute(gsubset, name = Net_generation)[get.vertex.attribute(gsubset, name = VertexName)!=SlackRef$name]
           
-          Power <- ImpPTDF2(gsubset,  
+          Power <- ImpPTDF(gsubset,  
                             SlackRef$name, 
                             AZero = AZero, 
                             LineProperties = LineProperties, 
@@ -61,7 +61,7 @@ PowerFlow3 <- function(g, AZero, LineProperties,
     #This function could be replaced with the method that just matches edges but it is so fast I don't care enough
     #It would mean that union could be completley removed which woul be more secure and simpler
     g <- gList %>%
-      Reduce(union3, .)
+      Reduce(union, .)
   }
 
   return(g)

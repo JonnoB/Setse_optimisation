@@ -31,20 +31,21 @@
 
 #This version builds on the Azero version but also replaces compdiff
 #with a non loop-version. There have been some small improvements compared to the v1
-AttackTheGrid_compdiff_noloop2 <- function(g,
-                          AttackStrategy,
-                          referenceGrid = NULL,
- #                         MinMaxComp = 0.0,
-                          TotalAttackRounds=1000,
-                          CascadeMode = TRUE,
-                          Demand = "Demand",
-                          Generation = "Generation",
-                          EdgeName = "Link",
-                          VertexName = "name",
-                          Net_generation = "BalencedPower",
-                          power_flow = "PowerFlow",
-                          edge_limit = "Link.Limit"
-                          ){
+AttackTheGrid_List_fixed_attack <- function(g,
+                                            DeletionOrder,
+                                            Target = "Nodes",
+                                            Number = 1,
+                                            referenceGrid = NULL,
+                                            TotalAttackRounds=1000,
+                                            CascadeMode = TRUE,
+                                            Demand = "Demand",
+                                            Generation = "Generation",
+                                            EdgeName = "Link",
+                                            VertexName = "name",
+                                            Net_generation = "BalencedPower",
+                                            power_flow = "PowerFlow",
+                                            edge_limit = "Link.Limit"
+){
 
   
   #I can change the function so that only a graph need be entered and a list of graphs is returned. This is
@@ -60,7 +61,19 @@ AttackTheGrid_compdiff_noloop2 <- function(g,
   if(is.null(referenceGrid)){
     referenceGrid  <- g
   }
-  
+
+  if(Target=="Nodes"){
+    Name <- VertexName
+  } else if (Target == "Nodes"){
+
+    Name <- EdgeName
+
+  } else{
+
+    stop("Target must be 'Nodes' or 'Edges'")
+
+  }
+
   #precalculation of the line and transmission matrices
   #This speeds up the PTDF function by reducing expensive operations (Transmission more than LineProperties)
   AZero <- CreateTransmission(g, EdgeName, VertexName)
@@ -82,8 +95,7 @@ AttackTheGrid_compdiff_noloop2 <- function(g,
     g <- g[[length(g)]]
 
     #Remove the desired part of the network.
-    gCasc <- AttackStrategy %>% 
-      eval_tidy(., data = list(g = g)) #The capture environment contains delete nodes, however the current g is fed in here
+    gCasc <- FixedStrategyAttack2(g, DeletionOrder, Target = Target, Name = Name, Number = Number) #The capture environment contains delete nodes, however the current g is fed in here
     
     
     ##Rebalence network

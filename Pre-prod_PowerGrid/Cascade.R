@@ -30,8 +30,8 @@
 #' edge_limit = "Link.Limit"
 #' )
 
-#This builds on the Azero version but also replaces compdiff with a loopless version
-Cascade_compdiff_noloop2 <- function(NetworkList,
+
+Cascade <- function(NetworkList,
                                 Iteration = 0,
                                 StopCascade = Inf,
                                 g0 = NULL,
@@ -45,8 +45,7 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
                                 power_flow = "PowerFlow",
                                 edge_limit = "Link.Limit"
 ){
-  #This Function iterates through the network removing edges until there are no further overpower edges to remove
-  #This function uses the Bus order to choose the slack reference should this be changed?
+
   #Iteration: the number of iteration number of the cascade, used to keep track of what is going on
   CascadeContinues <- TRUE
   while(CascadeContinues & Iteration != StopCascade){
@@ -62,7 +61,7 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
     #This cannot be the first iteration and there needs to be more than one component
     if(!is.null(g0) & comp_info$no>1){
       #find components that need to be recalculuated
-      RecalcFlow <- Components_differ_no_loop(g, g0, EdgeName = EdgeName)
+      RecalcFlow <- Components_differ(g, g0, EdgeName = EdgeName)
       #save the full graph
       g_temp <- g
       #create a subgraph of elements that do not need to be recalculated
@@ -71,7 +70,7 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
     }
     
     #calculate the power flow on the subgraph
-    g <- PowerFlow3(g, AZero, LineProperties, 
+    g <- PowerFlow(g, AZero, LineProperties, 
                                 EdgeName = EdgeName, 
                                 VertexName = VertexName, 
                                 Net_generation = Net_generation, 
@@ -82,8 +81,7 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
       changed_edge_index <- match(edge_attr(g, EdgeName), edge_attr(g_temp, EdgeName) )
       
       g <- set_edge_attr(g_temp, name = power_flow, index =  changed_edge_index, value = edge_attr(g, power_flow) )
-      
-      #g <- union3(gNochange, g)
+
     }
     
     
@@ -107,8 +105,8 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
 
     g2<- delete.edges(g, edge_index_over)
 
-    #Balence grid after over powered lines and edges are removed
-    g2 <- BalencedGenDem3(g2, Demand, Generation, OutputVar = Net_generation)
+    #Balance grid after over powered lines and edges are removed
+    g2 <- BalancedGenDem(g2, Demand, Generation, OutputVar = Net_generation)
     
     #Checks to see if there are any changes in the edges of the network.
     #As no new edges can appear if the number of edges in the two graphs is identical then 

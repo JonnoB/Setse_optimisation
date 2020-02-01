@@ -31,10 +31,9 @@
 
 #This version builds on the Azero version but also replaces compdiff
 #with a non loop-version. There have been some small improvements compared to the v1
-AttackTheGrid_compdiff_noloop2 <- function(g,
+AttackTheGrid_List <- function(g,
                           AttackStrategy,
                           referenceGrid = NULL,
- #                         MinMaxComp = 0.0,
                           TotalAttackRounds=1000,
                           CascadeMode = TRUE,
                           Demand = "Demand",
@@ -89,7 +88,7 @@ AttackTheGrid_compdiff_noloop2 <- function(g,
     ##Rebalence network
     # #This means that the Cascade calc takes a balanced network which is good, generation or demand nodes may have been removed
     #this needs to be accounted for
-    gCasc <- BalencedGenDem3(gCasc, Demand, Generation, OutputVar = Net_generation)
+    gCasc <- BalancedGenDem(gCasc, Demand, Generation, OutputVar = Net_generation)
     
     GridCollapsed <- ecount(gCasc)==0
     
@@ -101,7 +100,7 @@ AttackTheGrid_compdiff_noloop2 <- function(g,
       
       if(CascadeMode){
         #this returns a list of networks each of the cascade
-        gCasc <- Cascade_compdiff_noloop2(NetworkList  = gCasc,
+        gCasc <- Cascade(NetworkList  = gCasc,
                          Iteration = 0,
                          StopCascade = Inf,
                          g0 = g,

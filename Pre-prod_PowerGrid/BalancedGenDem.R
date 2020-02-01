@@ -11,7 +11,7 @@
 #' @export
 #' @examples
 #' BalencedGenDem(g, DemandVar, GenerationVar, OutputVar = "BalencedPower")
-BalencedGenDem3 <- function(g, DemandVar, GenerationVar, OutputVar = "BalencedPower"){
+BalancedGenDem <- function(g, DemandVar, GenerationVar, OutputVar = "BalencedPower"){
 
   #get the components and create the vectors that will be filled with the component generation and demand
   comp_mem <-components(g)$membership
@@ -22,7 +22,7 @@ BalencedGenDem3 <- function(g, DemandVar, GenerationVar, OutputVar = "BalencedPo
   Demand <- get.vertex.attribute(g, DemandVar) 
   Generation <- get.vertex.attribute(g, GenerationVar)
   
-  #The look inserts the sum of gen and dem into the respective vector
+  #The loop inserts the sum of gen and dem into the respective vector
   for(n in 1:max(comp_mem)){
     
     sum_dem[comp_mem==n]  <-sum(Demand[comp_mem ==n])
