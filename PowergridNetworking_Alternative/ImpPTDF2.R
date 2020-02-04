@@ -28,9 +28,9 @@ ImpPTDF2 <- function(g, SlackRef, AZero, LineProperties, EdgeName = "Link", Vert
 
   #message("Creating Power matrices")
   #edge index is used quite a lot so is assigned here
-  edge_index <- get.edge.attribute(g, "name")
+  edge_index <- get.edge.attribute(g, EdgeName)
   #subset the original edge transmission matrix to only contain current nodes
-  AZero <-  AZero[rownames(AZero) %in% edge_index, colnames(AZero) %in% get.vertex.attribute(g, name = "name"), drop = FALSE]
+  AZero <-  AZero[rownames(AZero) %in% edge_index, colnames(AZero) %in% get.vertex.attribute(g, name = VertexName), drop = FALSE]
   #AZero <- CreateTransmission(g, EdgeName, VertexName)
   
   # #remove Slack bus, usually the largest generator

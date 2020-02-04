@@ -17,41 +17,34 @@
 #' @param edge_limit A character string. This value indicates the name of the edge attribute that holds the edge limit, the default is "Link.Limit"
 #' @export
 #' @seealso \code{\link{AttackTheGrid}}
-#' Cascade(NetworkList,
-#' Iteration = 0,
-#' StopCascade = Inf,
-#' g0 = NULL,
-#' Generation = "Generation",
-#' Demand = "Demand",
-#' EdgeName = "Link",
-#' VertexName = "name",
-#' Net_generation = "BalencedPower",
-#' power_flow = "PowerFlow",
-#' edge_limit = "Link.Limit"
-#' )
+
 
 #Version of cacade that outputs a list of vectors and the updated graph
-Cascade_compdiff_noloop2 <- function(NetworkList,
-                                Iteration = 0,
-                                StopCascade = Inf,
-                                g0 = NULL,
-                                AZero,
-                                LineProperties,
-                                Generation = "Generation",
-                                Demand = "Demand",
-                                EdgeName = "Link",
-                                VertexName = "name",
-                                Net_generation = "BalencedPower",
-                                power_flow = "PowerFlow",
-                                edge_limit = "Link.Limit"
+Cascade2 <- function(g,
+                     g0 = NULL,
+                     node_power = node_power,
+                     edge_status = edge_status,
+                     AZero,
+                     LineProperties,
+                     Generation = "Generation",
+                     Demand = "Demand",
+                     EdgeName = "Link",
+                     VertexName = "name",
+                     Net_generation = "BalencedPower",
+                     power_flow = "PowerFlow",
+                     edge_limit = "Link.Limit"
 ){
   #This Function iterates through the network removing edges until there are no further overpower edges to remove
   #This function uses the Bus order to choose the slack reference should this be changed?
   #Iteration: the number of iteration number of the cascade, used to keep track of what is going on
   CascadeContinues <- TRUE
+  Iteration <- 0
+  StopCascade <- Inf
+  
+  node_names <-names(node_power)
+  edge_names <- names(edge_status)
+  
   while(CascadeContinues & Iteration != StopCascade){
-    
-    g <- NetworkList[[length(NetworkList)]]
     
     Iteration <- Iteration + 1
     
@@ -67,9 +60,9 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
       g_temp <- g
       #create a subgraph of elements that do not need to be recalculated
       g <- delete.vertices(g,( 1:vcount(g))[!(comp_info$membership %in% RecalcFlow)])
-    #  print(paste("update",components(g)$no, "of", components(g_temp)$no))
+   #   print(paste("update",components(g)$no, "of", components(g_temp)$no))
     }
-    
+
     #calculate the power flow on the subgraph
     g <- PowerFlow3(g, AZero, LineProperties, 
                                 EdgeName = EdgeName, 
@@ -82,33 +75,48 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
       changed_edge_index <- match(edge_attr(g, EdgeName), edge_attr(g_temp, EdgeName) )
       
       g <- set_edge_attr(g_temp, name = power_flow, index =  changed_edge_index, value = edge_attr(g, power_flow) )
-      
-      #g <- union3(gNochange, g)
+
     }
-    
-    
+    ####
+    #
     #Delete Edges that are over the Limit
+    #
+    ####
     
     edge_index_over <- (1:ecount(g))[abs(edge_attr(g, name = power_flow)) > edge_attr(g, name = edge_limit)]
     #if no edges are over the limit setting the DeleteEdges to NA prevents errors being thrown
-    DeleteEdges <- edge_attr(g, name = EdgeName, index = edge_index_over)
+    Overloads <- edge_attr(g, name = EdgeName, index = edge_index_over)
 
-    #If the cascade has been going for more than 1 round then the overloaded edges need to be added together
-    if(Iteration==1){
-      Overloads <- DeleteEdges
+    #Replace the NA value in the vector with the loss through overloading
+    #Errors may occur here due to matric vector conversion.
+    edge_status[edge_names %in% Overloads] <- 3L
 
-    } else {
-      Overloads <- c(graph_attr(g, "EdgesOverloaded" ), DeleteEdges)
-
-    }
-    
-    #write vector of overloaded edges
-    g <- set_graph_attr(g, "EdgesOverloaded", Overloads)
-
+    #delete the overlaoded edges from the network
     g2<- delete.edges(g, edge_index_over)
 
     #Balence grid after over powered lines and edges are removed
-    g2 <- BalencedGenDem3(g2, Demand, Generation, OutputVar = Net_generation)
+    g3 <- BalencedGenDem3(g2, Demand, Generation, OutputVar = Net_generation)
+    
+    ####
+    #
+    #lost through islanding
+    #The previous value are modified in place, tiny speed and memory saving. g4 could actually overwrite g
+    #
+    ####
+    #Edges in original network and g2
+    edge_orig_and_g <- edge_names %in% edge_attr(g2, name = EdgeName)
+    #Edges in original network but and g2
+    edge_orig_and_g2 <- edge_names %in% edge_attr(g3, name = EdgeName)
+    
+    #Nodes in original network and g2
+    nodes_orig_and_g <- node_names %in% vertex_attr(g2, name = VertexName)
+    #Nodes in original network and g3
+    nodes_orig_and_g2 <- node_names %in% vertex_attr(g3, name = VertexName)
+    
+    #Replace the NA value in the matrix with the loss through islanding code
+    edge_status[edge_orig_and_g != edge_orig_and_g2] <- 2L
+    node_power[nodes_orig_and_g != nodes_orig_and_g2] <- +Inf
+    
     
     #Checks to see if there are any changes in the edges of the network.
     #As no new edges can appear if the number of edges in the two graphs is identical then 
@@ -123,15 +131,14 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
     CascadeContinues <- !isTRUE(edgesequal) & !GridCollapsed
     
     g0 <- g
+    g <- g3
     
-    if(CascadeContinues & Iteration != StopCascade){
-      #add the new network into the list
-      NetworkList <- c(NetworkList, list(g2))
-      
-    }
   }
   #message(paste("Cascade has completed with", Iteration, "iterations"))
   
-  return(NetworkList)
+  #Outputs the list which will be fed back into the Attack the grid function
+  Out <- list(g = g, node_power = node_power, edge_status = edge_status)
+  
+  return(Out)
   
 }

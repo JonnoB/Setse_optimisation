@@ -94,7 +94,7 @@ profvis(   AttackTheGrid_fix(list(list(g)),
 profvis(   AttackTheGrid_for_loop(g,
                                                    FixedNodes,
                                                    referenceGrid = NULL,
-                                                   TotalAttackRounds = 10,
+                                                   TotalAttackRounds = 100,
                                                    CascadeMode = TRUE),
            interval = 0.005)
 
@@ -320,7 +320,7 @@ profvis(AttackTheGrid_compdiff_noloop2(g,
                                                    FixedNodes2,
                                                    referenceGrid = NULL,
                                                   # MinMaxComp = 0,
-                                                   TotalAttackRounds = 1000,
+                                                   TotalAttackRounds = 100,
                                                    CascadeMode = TRUE),
            interval = 0.005)
 
@@ -555,5 +555,115 @@ test <- contains_same_edges(base_raw_full, base_attack_upgraded)
 time_base_raw_full/time_upgraded
 
 time_base_attack_full/time_upgraded
+```
+This is the first of two changes. This first one changes the results produced by the package due to identifying and error in the components differ function. The changes also speed up Attack the grid by an order of magnitude. 
+
+
+
+#AttackTheGrid2
+
+This is a development of attack the grid that produces only a list of 4 matrices.
+These matrices contain enough information to reconstruct the network at the end of each round and can quickly summaraise the network state as well as create the failure type data.
+```{r}
+
+time_compdiff_loopless2 <- system.time(loopless_compsdiff2 <- suppressMessages(AttackTheGrid_compdiff_noloop2(g,
+                              FixedNodes2,
+                              referenceGrid = NULL,
+                              TotalAttackRounds = 1000,
+                              CascadeMode = TRUE)))
+
+time_attack2 <- system.time(attack2 <- AttackTheGrid2(g,
+                              AttackStrategy = FixedNodes2,
+                              TotalAttackRounds = 1000,
+                              CascadeMode = TRUE))
+
+
+
+
+print(object.size(loopless_compsdiff2), units = "Mb")
+
+print(object.size(attack2), units = "Mb")
+
+names(attack2)
+
+
+
+#summarise the attack
+test <- extract_network_stats2(attack2)
+names(test)
+test2 <- ExtractNetworkStats(loopless_compsdiff2_test) %>%
+  mutate(gc_present = mean_degree_sqrd > 2*mean_degree) %>%
+  select(names(test))
+
+all_equal(test, test2)
+
+##
+##Benchmark the new way of generating the summary statistics.
+##The new way is 55 times faster
+##
+loopless_compsdiff2_test <- loopless_compsdiff2[!sapply(loopless_compsdiff2, is.null)]
+
+microbenchmark(old = ExtractNetworkStats(loopless_compsdiff2_test),
+               new = extract_network_stats2(attack2), 
+               times = 50)
+
+profvis( AttackTheGrid2(g,
+                              AttackStrategy = FixedNodes2,
+                              TotalAttackRounds = 100,
+                              CascadeMode = TRUE))
+
+ contains_same_edges(base_raw, atta)
+
+ edge_status_df <- attack2$edge_status %>% as_tibble
+ 
+ 
+ rowSums(attack2$edge_status, na.rm = T) %>% table
+ 
+ test<- attack2$node_power
+ test[is.finite(test)] <-0
+ rowSums(test, na.rm = T) %>% table
+
+
+
+```
+
+#validty 2
+```{r}
+
+
+contains_same_edges2 <- function(NetList1, matrix_list){
+         nm <-deparse(substitute(NetList2))
+        
+  components_df <-1:length(NetList1) %>% map_df(~{
+    #get the ith element of the list
+    g1 <- NetList1[[.x]]
+    #take the last element of that list. This is because the final element is the final state of the network
+    #when it has stabilised in that attack round
+    g1 <- g1[[length(g1)]]
+    edges_1 <- matrix_list[,.x]
+    edges_1 <- edges_1[edges_1==0 & !is.na(edges_1==0)]
+    df_1 <-  tibble(Link = names(edges_1[edges_1==0 & !is.na(edges_1==0)]))
+    
+    tibble(iter = .x,
+           edges_equal = isTRUE(all_equal(as_data_frame(g1) %>% select(Link), df_1)),
+            ref_edges = ecount(g1),
+            alt_edges =length(edges_1),
+           # ref_comps = components(g1)$no,
+           # alt_comps = components(g2)$no
+    )
+    
+  })
+  
+}
+
+NetList1 <-loopless_compsdiff2_test
+
+are_methods_equal <-contains_same_edges2(loopless_compsdiff2_test, attack2$edge_status) %>%
+  mutate(diff = ref_edges==alt_edges)
+
+matrix_list <- attack2$edge_status
+  edges_1 <- matrix_list[,.x]
+    edges_1 <- tibble(edges = names(edges_1[edges_1==0 & !is.na(edges_1==0)]))
+
 ```
 
