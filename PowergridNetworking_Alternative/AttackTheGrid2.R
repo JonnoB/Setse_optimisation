@@ -90,7 +90,7 @@ AttackTheGrid2 <- function(g,
   
   #
   edge_status[edge_order, CumulativeAttacks + 1] <-0
-  edge_power[edge_order, CumulativeAttacks + 1] <- edge_attr(g, name = power_flow)
+  edge_power[edge_order, CumulativeAttacks + 1] <- edge_attr(g, name = power_flow) / edge_capacity_vector
   node_power[node_order, CumulativeAttacks + 1] <- vertex_attr(g, name = Net_generation)
   node_edge_count[node_order, CumulativeAttacks + 1] <- degree(g)
   
@@ -196,14 +196,15 @@ AttackTheGrid2 <- function(g,
     node_order <- match(vertex_attr(g, name = VertexName), node_names, nomatch = 0)
     
     #Replace the NA value in the matrix with the loss through islanding code
-    edge_status[edge_order, CumulativeAttacks + 1] <- 0
-    edge_power[edge_order, CumulativeAttacks + 1] <- edge_attr(g, name = power_flow) / edge_capacity_vector
+    edge_status[edge_order, CumulativeAttacks + 1] <- 0L
+    edge_power[edge_order, CumulativeAttacks + 1] <- edge_attr(g, name = power_flow) 
+    #This is inserted here as it is an easy way to convert to load level without having to use matrix algebra outside the loop
+    edge_power[, CumulativeAttacks + 1] <- edge_power[, CumulativeAttacks + 1] / edge_capacity_vector
     node_power[node_order, CumulativeAttacks + 1] <- vertex_attr(g, name = Net_generation)
     node_edge_count[node_order, CumulativeAttacks + 1] <- degree(g)
   }
   
-  print(dim(diag(1/edge_attr(g0, name = edge_limit))))
-  print(dim(edge_power))
+  #remove the columns which are just NA's
   edge_status <- edge_status[, 1:(CumulativeAttacks + 1)]
   edge_power  <- abs(edge_power[,  1:(CumulativeAttacks + 1)])# %*% diag(1/edge_attr(g0, name = edge_limit))   #edge capacity
   node_power  <- node_power[,  1:(CumulativeAttacks + 1)]

@@ -23,7 +23,7 @@
 #' @seealso \code{\link{Create_stabilised_blocks}} \code{\link{create_balanced_blocks}}
 #' @export
 
-Find_network_balance4 <- function(g, 
+Find_network_balance5 <- function(g, 
                                  force ="net_generation", 
                                  flow = "power_flow", 
                                  capacity = "capacity", 
@@ -35,7 +35,6 @@ Find_network_balance4 <- function(g,
                                  coef_drag = 1, 
                                  tol = 1e-6,
                                  sparse = FALSE,
-                                 verbose = TRUE,
                                  two_node_solution = TRUE){
 
   #helper function that prepares the data
@@ -80,7 +79,7 @@ Find_network_balance4 <- function(g,
     #Solves using the iterative method.
   } else{
     
-    Out <- FindStabilSystem5(
+    Out <- FindStabilSystem_test(
       node_status = Prep$node_status, 
       ten_mat = Prep$ten_mat, 
       non_empty_matrix = Prep$non_empty_matrix, 
@@ -91,8 +90,7 @@ Find_network_balance4 <- function(g,
       max_iter = max_iter, 
       coef_drag = coef_drag,
       tol = tol, 
-      sparse = sparse, 
-      verbose = verbose) 
+      sparse = sparse) 
     
   }
   

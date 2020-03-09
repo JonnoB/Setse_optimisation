@@ -12,7 +12,7 @@
 #'@param edge_name a character string. The edge attribute that contains the names of all the edges.
 #'@export
 
-Prepare_data_for_find_network_balance3 <-function(g, force, flow, distance, mass, edge_name = edge_name){
+Prepare_data_for_find_network_balance2 <-function(g, force, flow, distance, mass, edge_name = edge_name){
   #this is a helper function that goes inside the the find network balance function to help make the code easier to read
   
   g <- set.edge.attribute(g, "distance", value = get.edge.attribute(g, distance))

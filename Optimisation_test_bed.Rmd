@@ -34,7 +34,11 @@ list.files(file.path("/home/jonno/Setse_optimisation/Alterantive_functions"), pa
 list.files(file.path("/home/jonno/Setse_optimisation/Original_functions"), pattern = ".R", full.names = T) %>%
   walk(~source(.x))
 
-library(PowerGridNetworking)
+
+list.files(file.path("/home/jonno/Setse_optimisation/PowergridNetworking_Original"), pattern = ".R", full.names = T) %>%
+  walk(~source(.x))
+
+
 ```
 
 
@@ -142,7 +146,9 @@ sparse = FALSE
  dmat <- Prep$dmat
 frctmultiplier <-1
 
-time_test_orig_start <- system.time( test_original_algos<-  Find_network_balance(g = g,
+
+
+time_test_orig_start <- system.time( test_original_algos <-  Find_network_balance2(g = g,
                                                force =force,
                                                flow = flow,
                                                distance = distance,
@@ -164,7 +170,7 @@ time_test_orig_start <- system.time( test_original_algos<-  Find_network_balance
                                                edge_name = edge_name,
                                                tstep = tstep,
                                                tol = tol,
-                                               maxIter = 4e4,
+                                               maxIter = maxIter,
                                                mass = mass,
                                                verbose = FALSE,
                                                frctmultiplier = 0.5))
@@ -1352,76 +1358,291 @@ Rcpp::List flowCalcCpp(const arma::mat &Am, const arma::mat &Cm) {
 
 ```
 
-#nelder mead
 
-It can be difficult to know how to set the convergence criteria for the sysem aka how to set tstep and coef_drag. It may be possible to automate this using the nelder-mead derivitive free optimisation method
+#Code for disucssion
+```{r}
+profvis(Find_network_balance(g = g,
+                      force =force,
+                      flow = flow,
+                      distance = distance,
+                       capacity = capacity,
+                      edge_name = edge_name,
+                      tstep = tstep,
+                      tol = tol,
+                      maxIter =1000 ,
+                      mass = mass
+))
+
+
+
+profvis(Find_network_balance2(g = g,
+                      force =force,
+                      flow = flow,
+                      distance = distance,
+                      #  capacity = capacity,
+                      edge_name = edge_name,
+                      tstep = tstep,
+                      tol = tol,
+                      maxIter = 1000 ,
+                      mass = mass
+))
+
+profvis(Find_network_balance3(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               maxIter = 1000,
+                                               mass = mass,
+                                               verbose = FALSE))
+
+
+profvis(Find_network_balance4(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               max_iter = 1000,
+                                               mass = mass,
+                                               verbose = FALSE,
+                                               sparse = FALSE,
+                                               coef_drag =1.5))
+
+
+profvis(Find_network_balance5(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = tol,
+                                               max_iter = 1000,
+                                               mass = mass,
+                                               sparse = FALSE,
+                                               coef_drag =1.5))
+
+
+
+#This just shows that the relation is linear.
+#This hardly seem like a contentious thing to say so is it necessary?
+linear_proof <-{c(100, seq(from = 1,to = 31, by = 3)*1000)} %>% map_df(~{
+  print(.x)
+  temp <- system.time(Find_network_balance5(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = 0,
+                                               max_iter = .x,
+                                               mass = mass,
+                                               sparse = FALSE,
+                                               coef_drag =1.5))
+  
+  return(tibble(user = temp[[1]],
+                            elapsed = temp[[3]],
+                Iterations = .x))
+  
+})
+
+
+linear_proof %>%
+  ggplot(aes(x = Iterations, y = elapsed)) + geom_point() +
+  labs(title = "The relationship between number of iterations and elapsed time on IEEE-118")
+
+
+
+system.time(Find_network_balance(g = g,
+                      force =force,
+                      flow = flow,
+                      distance = distance,
+                       capacity = capacity,
+                      edge_name = edge_name,
+                      tstep = tstep,
+                      tol = tol,
+                      maxIter =2000 ,
+                      mass = mass
+))
+
+ system.time(Find_network_balance5(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = 0,
+                                               max_iter = 2000,
+                                               mass = mass,
+                                               sparse = FALSE,
+                                               coef_drag =1.5))
+ 
+ 
+ linear_proof_original <-{c(100, seq(from = 1,to = 31, by = 3)*1000)} %>% map_df(~{
+  print(.x)
+  temp <- system.time(Find_network_balance(g = g,
+                      force =force,
+                      flow = flow,
+                      distance = distance,
+                       capacity = capacity,
+                      edge_name = edge_name,
+                      tstep = tstep,
+                      tol = tol,
+                      maxIter =.x,
+                      mass = mass
+))
+  
+  return(tibble(user = temp[[1]],
+                            elapsed = temp[[3]],
+                Iterations = .x))
+  
+})
+
+ bind_rows(#linear_proof %>% mutate(type = "final"),
+           linear_proof_original %>% mutate(type = "original")
+           ) %>%
+  ggplot(aes(x = Iterations, y = (user), colour = type)) + geom_point() +
+  labs(title = "The relationship between number of iterations and elapsed time on IEEE-118")
+ 
+ 
+test <-  microbenchmark(final = Find_network_balance5(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = 0,
+                                               max_iter = .x,
+                                               mass = mass,
+                                               sparse = FALSE,
+                                               coef_drag =1.5),
+                        unit = "ms",
+                        times = 20) %>%
+  summary() %>%
+  mutate(Iterations = .x)
+
+
+```
+
+#microbench approach
 ```{r}
 
-nelder_mead_tstep_drag <- function(par, tol = 2e-3){
-  #This is a simplified version that only takes two arguments the vector of parameters and the system tolerance
+start.time <- Sys.time()
+linear_proof_micro <-{c(100, seq(from = 1,to = 31, by = 3)*1000)} %>% map_df(~{
+  print(.x)
+  temp <-  microbenchmark(final = Find_network_balance5(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = 0,
+                                               max_iter = .x,
+                                               mass = mass,
+                                               sparse = FALSE,
+                                               coef_drag =1.5),
+                        unit = "ms",
+                        times = 20) %>%
+  summary() %>%
+  mutate(Iterations = .x)
   
-  #get the embeddings for the network
-  #negative time and drag are forbidden
-  emdedded_network <- SETS_embedding(g, 
-                                     force =force,
-                                     flow = flow,
-                                     distance = distance,
-                                     edge_name = edge_name,
-                                     capacity = capacity,
-                                     k = "k",
-                                     tstep = ifelse(par[1]<0,0, par[1] ), 
-                                     tol = tol,
-                                     max_iter = 5e4 ,
-                                     coef_drag = ifelse(par[2]<0,0, par[2] ),
-                                     mass = mass,
-                                     sample = 100
-  )
+  return(temp)
   
-  #find the total static force in the network. this is the value to be minimised
-  total_static_force <- sum(abs(emdedded_network$node_embeddings$static_force))
-  
-  #this puts a hard minimum of the convergence tolerance as an output. this is becuase all that matters is that the static
-  #force is smaller than the tolerance not that it is minimised
-  Out <- ifelse(total_static_force < tol, tol, total_static_force)
-  
-  return(Out)
-}
+})
+stop.time <- Sys.time()
+
+stop.time-start.time
+
+linear_proof_micro %>%
+  pivot_longer(cols = c(lq, uq, mean, max, min)) %>%
+  mutate(type = case_when(
+    name =="lq" | name == "uq" ~ "quartile limit",
+    name =="min" | name =="max" ~ "extrema",
+    name == "mean" ~"mean",
+  )) %>%
+  ggplot(aes(x = Iterations, y = (value), colour = type, group = name)) + geom_line() +
+  labs(title = "The relationship between number of iterations and elapsed time on IEEE-118")
 
 
-test <- optim(par = c(0.01, 4), 
-              nelder_mead_tstep_drag, 
-              method = "L-BFGS-B", 
-              upper = c(0.1, 5),
-              lower = c(0,0),
-              control = list(trace = 3, maxit = 20)
-)
+linear_proof_micro %>%
+  ggplot(aes(x = Iterations, y = mean)) +
+  geom_ribbon(aes(ymin = min, ymax = max),  fill = "blue", alpha = 0.25) +
+  geom_ribbon(aes(ymin = lq, ymax = uq), fill = "red", alpha = 0.25)+
+  geom_line() +
+  #scale_y_log10()+
+  labs(title = "The relationship between number of iterations and elapsed time on IEEE-118")
 
 
-emdedded_network <- SETS_embedding(g, 
-                                   force =force,
-                                   flow = flow,
-                                   distance = distance,
-                                   edge_name = edge_name,
-                                   capacity = capacity,
-                                   k = "k",
-                                   tstep = test$par[1],
-                                   tol = tol,
-                                   max_iter = 1e5 ,
-                                   coef_drag = test$par[2],
-                                   mass = mass,
-                                   sample = 100
-)
 
-  
-  test2 <- emdedded_network$node_embeddings
-  log10(sum(abs(test2$static_force)))
-  
-  
-df <- expand.grid(x = 0:100, y = 0:100)
-df$z <- runif(nrow(df))
-# default is compatible with geom_tile()
-ggplot(df, aes(x, y, fill = z)) + geom_raster()
+ microbenchmark(v4 = Find_network_balance4(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = 0,
+                                               max_iter = .x,
+                                               mass = mass,
+                                               sparse = FALSE,
+                                               coef_drag =1.5),
+                v5 = Find_network_balance5(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = 0,
+                                               max_iter = .x,
+                                               mass = mass,
+                                               sparse = FALSE,
+                                               coef_drag =1.5),
+                        unit = "ms",
+                        times = 20) 
+ 
+ 
+ 
+ system.time(Find_network_balance5(g = g,
+                                               force =force,
+                                               flow = flow,
+                                               distance = distance,
+                                               capacity = capacity,
+                                               edge_name = edge_name,
+                                               tstep = tstep,
+                                               tol = 0,
+                                               max_iter = 1000,
+                                               mass = mass,
+                                               sparse = FALSE,
+                                               coef_drag =1.5))
+ 
+ 
+ #Times taken from profvis for 1000 reps
+ tibble(version =c(1:5), time =48530/rev(c(370, 1530, 1950, 6100, 48530)), rel_change = time/lag(time)) %>%
+   ggplot(aes(x = version, y =rel_change)) + geom_col() +
+   labs(title = "Speed-up on previous version of SETSe", y = "relative change")
 
+  tibble(version =c(1:5), time =48530/rev(c(370, 1530, 1950, 6100, 48530)), rel_change = time/lag(time)) %>%
+   ggplot(aes(x = version, y = time)) + geom_col() +
+   labs(title = "Speed-up from original SETSe algorithm", y = "relative change")
 
+   tibble(version =c(1:5), time =48530/rev(c(370, 1530, 1950, 6100, 48530)), rel_change = time/lag(time)) %>%
+     pivot_longer(cols = c("time", "rel_change")) %>%
+     mutate(value =ifelse(is.na(value),1, value),
+            name = ifelse(name=="time", "Time", "Relative change")) %>%
+     ggplot(aes(x = version, y = value)) + geom_col()+
+     facet_wrap(~name, scales = "free_y") +
+   labs(title = "Speed-up from original SETSe algorithm", y = "relative speed-up")
+ 
 ```
 

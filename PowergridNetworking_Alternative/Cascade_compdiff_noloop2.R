@@ -67,7 +67,7 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
       g_temp <- g
       #create a subgraph of elements that do not need to be recalculated
       g <- delete.vertices(g,( 1:vcount(g))[!(comp_info$membership %in% RecalcFlow)])
-    #  print(paste("update",components(g)$no, "of", components(g_temp)$no))
+      #print(paste("update",components(g)$no, "of", components(g_temp)$no))
     }
     
     #calculate the power flow on the subgraph
@@ -108,6 +108,8 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
     g2<- delete.edges(g, edge_index_over)
 
     #Balence grid after over powered lines and edges are removed
+    #This can change both the power and topology of the network but no update is performed on the edge power
+    #this means that the update has to be done in the subsequent round
     g2 <- BalencedGenDem3(g2, Demand, Generation, OutputVar = Net_generation)
     
     #Checks to see if there are any changes in the edges of the network.
@@ -129,8 +131,15 @@ Cascade_compdiff_noloop2 <- function(NetworkList,
       NetworkList <- c(NetworkList, list(g2))
       
     }
-  }
+ 
+    
+
   #message(paste("Cascade has completed with", Iteration, "iterations"))
+  
+  }
+  
+  #replace the last graph to ensure that the linepower is correct
+  NetworkList[[length(NetworkList)]] <- g2
   
   return(NetworkList)
   

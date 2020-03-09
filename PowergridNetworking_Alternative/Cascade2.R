@@ -60,7 +60,7 @@ Cascade2 <- function(g,
       g_temp <- g
       #create a subgraph of elements that do not need to be recalculated
       g <- delete.vertices(g,( 1:vcount(g))[!(comp_info$membership %in% RecalcFlow)])
-   #   print(paste("update",components(g)$no, "of", components(g_temp)$no))
+    # print(paste("update",components(g)$no, "of", components(g_temp)$no))
     }
 
     #calculate the power flow on the subgraph
@@ -130,6 +130,9 @@ Cascade2 <- function(g,
     #Checking there are edges left prevents trying to find a component in the Slackref and throwing an error.
     CascadeContinues <- !isTRUE(edgesequal) & !GridCollapsed
     
+    #Cascade2 avoides the issues with the list version of cascade be cause it doesn't matter if 
+    #the  matrix is updated again the system stays identical.
+    #This is why this function never had the update issue of the other one had.
     g0 <- g
     g <- g3
     
